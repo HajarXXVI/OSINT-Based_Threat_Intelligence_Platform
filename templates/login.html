@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThreatLens // Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="bg-slate-950 text-slate-100">
+
+    <!-- Background Layers -->
+    <canvas id="bg-canvas"></canvas>
+    <div class="crt-overlay"></div>
+
+    <!-- Centered Modal Wrapper -->
+    <div class="fixed inset-0 z-10 flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-lg p-8 shadow-2xl space-y-6 backdrop-blur-md">
+
+            <div class="text-center space-y-2">
+                <i class="fa-solid fa-shield-halved text-cyan-400 text-4xl mb-2"></i>
+                <h1 class="font-cyber font-black text-2xl tracking-widest text-cyan-400">THREAT<span class="text-fuchsia-500">LENS</span></h1>
+                <p class="text-xs uppercase tracking-widest text-slate-400">Login</p>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="{% if category == 'success' %}bg-emerald-950/60 border-emerald-500/60 text-emerald-300
+                              {% elif category == 'info' %}bg-cyan-950/60 border-cyan-500/60 text-cyan-300
+                              {% else %}bg-red-950/60 border-red-500/60 text-red-300{% endif %}
+                              border text-xs font-bold tracking-wider uppercase p-3 rounded flex items-center gap-2">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>{{ message }}</span>
+                  </div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="/login" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">
+                        <i class="fa-solid fa-user text-fuchsia-500"></i> Username
+                    </label>
+                    <input type="text" name="username" placeholder="username" required class="w-full px-4 py-2.5 bg-slate-950/80 border border-slate-800 text-slate-100 rounded focus:border-cyan-400 focus:outline-none font-mono text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">
+                        <i class="fa-solid fa-lock text-cyan-400"></i> Password
+                    </label>
+                    <input type="password" name="password" placeholder="••••••••••••" required class="w-full px-4 py-2.5 bg-slate-950/80 border border-slate-800 text-slate-100 rounded focus:border-cyan-400 focus:outline-none font-mono text-sm">
+                </div>
+
+                <button type="submit" class="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-cyber font-black uppercase text-xs tracking-widest transition rounded mt-2 shadow-lg shadow-cyan-500/20">
+                    Login
+                </button>
+            </form>
+
+            <div class="text-center pt-2 border-t border-slate-800">
+                <a href="/register" class="text-xs text-slate-400 hover:text-cyan-400 transition font-bold tracking-widest uppercase">
+                    Register
+                </a>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Background Particle Script -->
+    <script>
+        const canvas = document.getElementById('bg-canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height, particles;
+
+        function init() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            particles = [];
+            const particleCount = Math.floor((width * height) / 10000);
+
+            for (let i = 0; i < particleCount; i++) {
+                particles.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    vx: (Math.random() - 0.5) * 1.2,
+                    vy: (Math.random() - 0.5) * 1.2,
+                    size: Math.random() * 2 + 1,
+                    color: Math.random() > 0.5 ? '#06b6d4' : '#d946ef'
+                });
+            }
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+
+            for (let i = 0; i < particles.length; i++) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+
+                if (p.x < 0 || p.x > width) p.vx *= -1;
+                if (p.y < 0 || p.y > height) p.vy *= -1;
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.fill();
+
+                for (let j = i + 1; j < particles.length; j++) {
+                    let p2 = particles[j];
+                    let dx = p.x - p2.x;
+                    let dy = p.y - p2.y;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < 120) {
+                        ctx.beginPath();
+                        ctx.moveTo(p.x, p.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.strokeStyle = `rgba(6, 182, 212, ${1 - dist / 120})`;
+                        ctx.lineWidth = 0.6;
+                        ctx.stroke();
+                    }
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', init);
+        init();
+        animate();
+    </script>
+</body>
+</html>

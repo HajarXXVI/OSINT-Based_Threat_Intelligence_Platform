@@ -1,0 +1,43 @@
+/* Sidebar transition */
+aside {
+    transition: width 0.25s ease-in-out;
+}
+
+/* Collapsed Sidebar Styles */
+aside.collapsed {
+    width: 4.5rem !important; /* Forces 72px width over Tailwind's w-64 */
+}
+
+/* Hide text labels when collapsed */
+aside.collapsed .sidebar-text {
+    display: none !important;
+}
+
+/* Center icons when collapsed */
+aside.collapsed .logo-container {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+    justify-content: center !important;
+}
+
+aside.collapsed nav a {
+    justify-content: center !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+}
+
+aside.collapsed .logout-btn {
+    justify-content: center !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+}
+
+#bg-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;
+    pointer-events: none;
+}

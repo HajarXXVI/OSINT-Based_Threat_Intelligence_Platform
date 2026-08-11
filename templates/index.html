@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}ThreatLens // SOC Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Top Welcome Banner Card -->
+    <div class="bg-slate-900/80 border border-slate-800 rounded-lg p-6 shadow-2xl backdrop-blur-md relative overflow-hidden">
+        <div class="absolute -right-10 -bottom-10 text-slate-800/40 text-9xl pointer-events-none">
+            <i class="fa-solid fa-shield-halved"></i>
+        </div>
+        <h2 class="font-cyber font-bold text-2xl tracking-wider text-cyan-400 neon-text-cyan">
+            WELCOME, <span class="text-fuchsia-500">{{ current_user.username }}</span>
+        </h2>
+        <p class="text-xs font-mono text-slate-400 mt-1 uppercase tracking-wider">
+            ThreatLens Security Operations Center is online and monitoring network telemetry.
+        </p>
+    </div>
+
+    <!-- Quick Status Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="p-5 bg-slate-900/80 border border-slate-800 rounded-lg backdrop-blur-md shadow-lg">
+            <h3 class="text-xs font-mono text-slate-400 uppercase tracking-wider">System Status</h3>
+            <p class="text-emerald-400 font-bold text-sm mt-2 flex items-center gap-2">
+                <i class="fa-solid fa-circle-check"></i> Operational
+            </p>
+        </div>
+        <div class="p-5 bg-slate-900/80 border border-slate-800 rounded-lg backdrop-blur-md shadow-lg">
+            <h3 class="text-xs font-mono text-slate-400 uppercase tracking-wider">Active Clearance</h3>
+            <p class="text-cyan-400 font-bold text-sm mt-2 uppercase tracking-widest">
+                <i class="fa-solid fa-id-badge text-fuchsia-500 mr-1"></i> {{ current_user.role }}
+            </p>
+        </div>
+        <div class="p-5 bg-slate-900/80 border border-slate-800 rounded-lg backdrop-blur-md shadow-lg">
+            <h3 class="text-xs font-mono text-slate-400 uppercase tracking-wider">Database</h3>
+            <p class="text-fuchsia-400 font-bold text-sm mt-2 flex items-center gap-2">
+                <i class="fa-solid fa-database"></i> Connected
+            </p>
+        </div>
+    </div>
+
+    <!-- Threat Intelligence Target Scanner -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-6 shadow-xl">
+        <h2 class="text-sm font-bold uppercase tracking-widest text-cyan-400 mb-4 font-cyber">
+            <i class="fa-solid fa-radar text-fuchsia-500 mr-2"></i> Threat Intelligence Target Scanner
+        </h2>
+        <form action="/scan" method="POST" class="flex gap-4">
+            <input type="text" name="target" placeholder="Enter IP address or domain (e.g., 8.8.8.8)" required
+                   class="flex-1 px-4 py-2.5 bg-slate-950/80 border border-slate-800 text-slate-100 rounded focus:border-cyan-400 focus:outline-none font-mono text-sm">
+            <button type="submit" class="px-6 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-cyber font-black uppercase text-xs tracking-widest transition rounded shadow-lg shadow-cyan-600/20">
+                Initialize Scan
+            </button>
+        </form>
+    </div>
+
+    <!-- Recent Scans -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-6 shadow-xl">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+            <h3 class="font-cyber font-bold text-sm tracking-wider text-slate-300 uppercase">
+                <i class="fa-solid fa-clock-rotate-left text-cyan-400 mr-2"></i> Recent Scans
+            </h3>
+            <a href="/history" class="text-xs font-mono text-cyan-400 hover:text-cyan-300 uppercase tracking-wider transition">View all &rarr;</a>
+        </div>
+        {% if recent_scans %}
+            <div class="space-y-2 font-mono text-xs">
+                {% for s in recent_scans %}
+                <a href="/scan/{{ s.id }}" class="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-800/80 rounded hover:border-cyan-500/40 transition">
+                    <span class="flex items-center gap-3">
+                        <i class="fa-solid fa-crosshairs text-fuchsia-500"></i>
+                        <strong class="text-slate-200">{{ s.target }}</strong>
+                    </span>
+                    <span class="flex items-center gap-4 text-slate-400">
+                        <span>{{ s.scan_date.strftime('%Y-%m-%d %H:%M') if s.scan_date else 'N/A' }}</span>
+                        <span class="text-slate-500 hidden lg:inline">{{ s.profile or '' }}</span>
+                        <span class="font-bold" style="color: {{ s.risk_color or '#38bdf8' }};">{{ s.risk_score }}/100 [{{ s.risk_level }}]</span>
+                    </span>
+                </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="text-center py-6 text-slate-500 font-mono text-xs">
+                No scans yet. Run your first target analysis above.
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Live Telemetry / Security Feed Panel -->
+    <div class="bg-slate-900/80 border border-slate-800 rounded-lg p-6 shadow-2xl backdrop-blur-md space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 class="font-cyber font-bold text-sm tracking-wider text-slate-300 uppercase">
+                <i class="fa-solid fa-wave-square text-cyan-400 mr-2"></i> Live Security Telemetry Feed
+            </h3>
+            <span class="text-xs font-mono text-emerald-400 animate-pulse"><i class="fa-solid fa-circle text-[8px] mr-1"></i> Listening</span>
+        </div>
+        <div class="space-y-2 font-mono text-xs">
+            <div class="p-3 bg-slate-950/60 border border-slate-800/80 rounded flex items-center justify-between">
+                <span class="text-slate-300"><i class="fa-solid fa-shield text-cyan-400 mr-2"></i> Initialized core security modules and route bindings.</span>
+                <span class="text-slate-500">Just now</span>
+            </div>
+            <div class="p-3 bg-slate-950/60 border border-slate-800/80 rounded flex items-center justify-between">
+                <span class="text-slate-300"><i class="fa-solid fa-user-shield text-fuchsia-400 mr-2"></i> User session authenticated for <strong>{{ current_user.username }}</strong>.</span>
+                <span class="text-slate-500">Active</span>
+            </div>
+            <div class="p-3 bg-slate-950/60 border border-slate-800/80 rounded flex items-center justify-between">
+                <span class="text-slate-300"><i class="fa-solid fa-database text-cyan-400 mr-2"></i> Intelligence storage backend verified successfully.</span>
+                <span class="text-slate-500">OK</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

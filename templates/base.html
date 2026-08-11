@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ThreatLens // SOC Platform{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+        body { font-family: 'Share Tech Mono', monospace; }
+        .font-cyber { font-family: 'Orbitron', sans-serif; }
+        .neon-glow-cyan { box-shadow: 0 0 15px rgba(6, 182, 212, 0.15); }
+        .neon-text-cyan { text-shadow: 0 0 8px rgba(6, 182, 212, 0.6); }
+        .tab-btn.active { color: #22d3ee; border-bottom: 2px solid #22d3ee; }
+
+        {% if current_user.is_authenticated and current_user.theme == 'emerald' %}
+            :root { --theme-color: #10b981; --theme-border: rgba(16, 185, 129, 0.4); --theme-bg: rgba(16, 185, 129, 0.1); }
+        {% elif current_user.is_authenticated and current_user.theme == 'amber' %}
+            :root { --theme-color: #f59e0b; --theme-border: rgba(245, 158, 11, 0.4); --theme-bg: rgba(245, 158, 11, 0.1); }
+        {% elif current_user.is_authenticated and current_user.theme == 'fuchsia' %}
+            :root { --theme-color: #d946ef; --theme-border: rgba(217, 70, 239, 0.4); --theme-bg: rgba(217, 70, 239, 0.1); }
+        {% else %}
+            :root { --theme-color: #06b6d4; --theme-border: rgba(6, 182, 212, 0.4); --theme-bg: rgba(6, 182, 212, 0.1); }
+        {% endif %}
+
+        .text-theme { color: var(--theme-color) !important; }
+        .border-theme { border-color: var(--theme-border) !important; }
+        .bg-theme-subtle { background-color: var(--theme-bg) !important; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 flex min-h-screen">
+
+    <!-- Matrix Background Canvas -->
+    {% if not current_user.is_authenticated or current_user.enable_particles %}
+    <canvas id="bg-canvas"></canvas>
+    {% endif %}
+
+    {% if not current_user.is_authenticated or current_user.enable_crt %}
+    <div class="crt-overlay"></div>
+    {% endif %}
+
+    <!-- SIDEBAR NAVIGATION -->
+    <aside id="sidebar" class="w-64 bg-slate-900/80 border-r border-slate-800 flex flex-col justify-between relative z-10 backdrop-blur-md shrink-0">
+        <div>
+            <!-- Logo Header + Toggle Button -->
+            <div class="p-5 border-b border-slate-800/80 flex items-center justify-between logo-container">
+                <a href="/" class="flex items-center gap-3 hover:opacity-80 transition">
+                    <i class="fa-solid fa-shield-halved text-cyan-400 text-2xl shrink-0"></i>
+                    <h1 class="font-cyber font-black text-xl tracking-widest text-cyan-400 neon-text-cyan sidebar-text">THREAT<span class="text-fuchsia-500">LENS</span></h1>
+                </a>
+                <button type="button" onclick="event.stopPropagation(); toggleSidebar();" id="toggle-btn" class="text-slate-400 hover:text-cyan-400 p-2 rounded hover:bg-slate-800/60 transition cursor-pointer shrink-0">
+                    <i class="fa-solid fa-chevron-left text-sm" id="toggle-icon"></i>
+                </button>
+            </div>
+
+            <!-- Nav Links -->
+            <nav class="p-4 space-y-1 font-mono text-sm">
+                <a href="/" class="flex items-center gap-3 px-4 py-3 {% if active_page == 'home' %}bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-400 font-bold{% else %}text-slate-400 hover:text-slate-100 hover:bg-slate-800/50{% endif %} rounded transition">
+                    <i class="fa-solid fa-house w-5 text-center shrink-0"></i>
+                    <span class="sidebar-text">Home</span>
+                </a>
+                <a href="/history" class="flex items-center gap-3 px-4 py-3 {% if active_page == 'history' %}bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-400 font-bold{% else %}text-slate-400 hover:text-slate-100 hover:bg-slate-800/50{% endif %} rounded transition">
+                    <i class="fa-solid fa-clock-rotate-left w-5 text-center shrink-0"></i>
+                    <span class="sidebar-text">Scan History</span>
+                </a>
+                {% if current_user.role == 'admin' %}
+                <a href="/control-panel" class="flex items-center gap-3 px-4 py-3 {% if active_page == 'control_panel' %}bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-400 font-bold{% else %}text-slate-400 hover:text-slate-100 hover:bg-slate-800/50{% endif %} rounded transition">
+                    <i class="fa-solid fa-sliders w-5 text-center shrink-0"></i>
+                    <span class="sidebar-text">Control Panel</span>
+                </a>
+                {% endif %}
+            </nav>
+        </div>
+
+        <!-- Sidebar Footer -->
+        <div class="p-4 border-t border-slate-800/80">
+            <a href="/logout" class="logout-btn flex items-center gap-3 px-4 py-2.5 text-xs text-red-400 hover:bg-red-950/30 border border-red-500/30 rounded font-bold uppercase tracking-wider transition">
+                <i class="fa-solid fa-power-off shrink-0"></i>
+                <span class="sidebar-text">Logout</span>
+            </a>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT AREA -->
+    <div class="flex-1 flex flex-col relative z-10 overflow-y-auto">
+
+        <!-- Top Navigation Bar -->
+        <header class="h-16 border-b border-slate-800 bg-slate-900/90 px-6 flex items-center justify-between shrink-0">
+            <div>
+                {% block header_left %}{% endblock %}
+            </div>
+            <div class="flex items-center gap-6 text-xs uppercase font-bold tracking-widest text-slate-400">
+                <span>Operator: <span class="text-cyan-400">{{ session.get('username') or current_user.username }}</span></span>
+                <a href="/settings" class="{% if active_page == 'settings' %}text-cyan-400{% else %}hover:text-cyan-400{% endif %} transition"><i class="fa-solid fa-gear"></i> Settings</a>
+                <a href="/logout" class="hover:text-red-400 transition"><i class="fa-solid fa-power-off"></i> Logout</a>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="flex-1 p-8 max-w-7xl w-full">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="mb-4 border text-xs font-mono font-bold tracking-wider uppercase p-3 rounded flex items-center gap-2
+                      {% if category == 'success' %}bg-emerald-950/60 border-emerald-500/60 text-emerald-300
+                      {% elif category == 'info' %}bg-cyan-950/60 border-cyan-500/60 text-cyan-300
+                      {% elif category == 'warning' %}bg-amber-950/60 border-amber-500/60 text-amber-300
+                      {% else %}bg-red-950/60 border-red-500/60 text-red-300{% endif %}">
+                      <i class="fa-solid fa-circle-info"></i>
+                      <span>{{ message }}</span>
+                  </div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const icon = document.getElementById('toggle-icon');
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                icon.classList.remove('fa-chevron-left'); icon.classList.add('fa-chevron-right');
+                localStorage.setItem('sidebar-collapsed', 'true');
+            } else {
+                icon.classList.remove('fa-chevron-right'); icon.classList.add('fa-chevron-left');
+                localStorage.setItem('sidebar-collapsed', 'false');
+            }
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            if (localStorage.getItem('sidebar-collapsed') === 'true') {
+                const sidebar = document.getElementById('sidebar');
+                const icon = document.getElementById('toggle-icon');
+                sidebar.classList.add('collapsed');
+                if (icon) { icon.classList.remove('fa-chevron-left'); icon.classList.add('fa-chevron-right'); }
+            }
+        });
+
+        // Background Particles
+        const canvas = document.getElementById('bg-canvas');
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            let width, height, particles;
+
+            // Map theme variables to particle colors
+            const themeColors = {
+                'emerald': ['#10b981', '#059669'],
+                'amber': ['#f59e0b', '#d97706'],
+                'fuchsia': ['#d946ef', '#c026d3'],
+                'cyan': ['#06b6d4', '#d946ef']
+            };
+            const activeTheme = "{{ current_user.theme if current_user.is_authenticated else 'cyan' }}";
+            const colors = themeColors[activeTheme] || themeColors['cyan'];
+
+            function init() {
+                width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; particles = [];
+                for (let i = 0; i < Math.floor((width * height) / 10000); i++) {
+                    particles.push({
+                        x: Math.random() * width, y: Math.random() * height,
+                        vx: (Math.random() - 0.5) * 1.2, vy: (Math.random() - 0.5) * 1.2,
+                        size: Math.random() * 2 + 1, color: Math.random() > 0.5 ? colors[0] : colors[1]
+                    });
+                }
+            }
+            function animate() {
+                ctx.clearRect(0, 0, width, height);
+                for (let i = 0; i < particles.length; i++) {
+                    let p = particles[i]; p.x += p.vx; p.y += p.vy;
+                    if (p.x < 0 || p.x > width) p.vx *= -1; if (p.y < 0 || p.y > height) p.vy *= -1;
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.fill();
+                    for (let j = i + 1; j < particles.length; j++) {
+                        let p2 = particles[j], dx = p.x - p2.x, dy = p.y - p2.y, dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist < 120) {
+                            ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p2.x, p2.y);
+                            ctx.strokeStyle = colors[0] === '#10b981' ? `rgba(16, 185, 129, ${1 - dist / 120})` : (colors[0] === '#f59e0b' ? `rgba(245, 158, 11, ${1 - dist / 120})` : `rgba(6, 182, 212, ${1 - dist / 120})`);
+                            ctx.lineWidth = 0.6; ctx.stroke();
+                        }
+                    }
+                }
+                requestAnimationFrame(animate);
+            }
+            window.addEventListener('resize', init); init(); animate();
+        }
+    </script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>
