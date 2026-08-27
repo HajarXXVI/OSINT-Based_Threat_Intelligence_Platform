@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+
+{% block title %}ThreatLens // Analytics Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between">
+        <div>
+            <h2 class="font-cyber font-bold text-2xl tracking-wider text-cyan-400">Analytics Dashboard</h2>
+            <p class="text-xs font-mono text-slate-400 mt-1">Risk trend &amp; scan-history visualization across your targets</p>
+        </div>
+        <a href="/" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-cyber font-black uppercase text-xs tracking-widest transition rounded border border-slate-700">
+            <i class="fa-solid fa-arrow-left mr-1"></i> Back
+        </a>
+    </div>
+
+    <!-- Summary KPI Strip -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="p-4 bg-slate-900/80 border border-slate-800 rounded-lg shadow-lg">
+            <h4 class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Total Scans</h4>
+            <p class="text-2xl font-bold font-mono text-cyan-400 mt-1">{{ scans|length }}</p>
+        </div>
+        <div class="p-4 bg-slate-900/80 border border-slate-800 rounded-lg shadow-lg">
+            <h4 class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Critical</h4>
+            <p class="text-2xl font-bold font-mono text-red-400 mt-1">{{ risk_distribution.counts[0] }}</p>
+        </div>
+        <div class="p-4 bg-slate-900/80 border border-slate-800 rounded-lg shadow-lg">
+            <h4 class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">High Risk</h4>
+            <p class="text-2xl font-bold font-mono text-orange-400 mt-1">{{ risk_distribution.counts[1] }}</p>
+        </div>
+        <div class="p-4 bg-slate-900/80 border border-slate-800 rounded-lg shadow-lg">
+            <h4 class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Avg Score</h4>
+            <p class="text-2xl font-bold font-mono text-fuchsia-400 mt-1">
+                {% if scans %}{{ (scans|map(attribute='risk_score')|sum / scans|length)|round(0)|int }}{% else %}0{% endif %}/100
+            </p>
+        </div>
+    </div>
+
+    {% if scans %}
+    <!-- Row 1: Risk Trend + Level Distribution -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl">
+            <h3 class="font-cyber font-bold text-sm tracking-wider text-cyan-400 uppercase border-b border-slate-800 pb-2 mb-3">
+                <i class="fa-solid fa-chart-line mr-2 text-fuchsia-500"></i> Risk Score Trend
+            </h3>
+            <div class="relative h-64"><canvas id="riskTrendChart"></canvas></div>
+            <p class="text-[10px] font-mono text-slate-500 mt-2 uppercase tracking-wider">Risk score (0&ndash;100) for each scan over time</p>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl">
+            <h3 class="font-cyber font-bold text-sm tracking-wider text-cyan-400 uppercase border-b border-slate-800 pb-2 mb-3">
+                <i class="fa-solid fa-chart-pie mr-2 text-fuchsia-500"></i> Risk Level Distribution
+            </h3>
+            <div class="relative h-64"><canvas id="riskDistChart"></canvas></div>
+            <p class="text-[10px] font-mono text-slate-500 mt-2 uppercase tracking-wider">Share of scans by severity band</p>
+        </div>
+    </div>
+
+    <!-- Row 2: Exposure vs Threat + Activity -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl">
+            <h3 class="font-cyber font-bold text-sm tracking-wider text-fuchsia-400 uppercase border-b border-slate-800 pb-2 mb-3">
+                <i class="fa-solid fa-scale-balanced mr-2 text-cyan-400"></i> Exposure vs Threat Index
+            </h3>
+            <div class="relative h-64"><canvas id="expThreatChart"></canvas></div>
+            <p class="text-[10px] font-mono text-slate-500 mt-2 uppercase tracking-wider">Exposure (attackable by others) vs Threat (dangerous to others)</p>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl">
+            <h3 class="font-cyber font-bold text-sm tracking-wider text-fuchsia-400 uppercase border-b border-slate-800 pb-2 mb-3">
+                <i class="fa-solid fa-list-check mr-2 text-cyan-400"></i> Scan Activity (14d)
+            </h3>
+            <div class="relative h-64"><canvas id="activityChart"></canvas></div>
+            <p class="text-[10px] font-mono text-slate-500 mt-2 uppercase tracking-wider">Number of scans performed per day</p>
+        </div>
+    </div>
+
+    <!-- Row 3: Top Targets + Profile Verdicts -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl">
+            <h3 class="font-cyber font-bold text-sm tracking-wider text-cyan-400 uppercase border-b border-slate-800 pb-2 mb-3">
+                <i class="fa-solid fa-bullseye mr-2 text-fuchsia-500"></i> Top Targets by Risk
+            </h3>
+            <div class="relative h-64"><canvas id="topTargetsChart"></canvas></div>
+            <p class="text-[10px] font-mono text-slate-500 mt-2 uppercase tracking-wider">Highest-scoring targets (all time, worst score per target)</p>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl">
+            <h3 class="font-cyber font-bold text-sm tracking-wider text-cyan-400 uppercase border-b border-slate-800 pb-2 mb-3">
+                <i class="fa-solid fa-user-shield mr-2 text-fuchsia-500"></i> Profile Verdicts
+            </h3>
+            <div class="relative h-64"><canvas id="profileChart"></canvas></div>
+            <p class="text-[10px] font-mono text-slate-500 mt-2 uppercase tracking-wider">Distribution of target profile verdicts</p>
+        </div>
+    </div>
+    {% else %}
+    <!-- Empty state -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-10 text-center shadow-xl">
+        <i class="fa-solid fa-chart-column text-slate-700 text-5xl mb-4"></i>
+        <h3 class="font-cyber font-bold text-lg text-cyan-400">No Analytics Yet</h3>
+        <p class="text-xs font-mono text-slate-400 mt-2 max-w-md mx-auto">Run a target analysis from the home page and your risk trends, exposure-vs-threat profile and scan activity will appear here.</p>
+        <a href="/" class="inline-block mt-6 px-6 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-cyber font-black uppercase text-xs tracking-widest transition rounded shadow-lg shadow-cyan-600/20">
+            <i class="fa-solid fa-radar mr-1"></i> Initialize Scan
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof Chart === 'undefined') return;
+
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.font.family = "'Share Tech Mono', monospace";
+    Chart.defaults.font.size = 11;
+    Chart.defaults.borderColor = 'rgba(51,65,85,0.6)';
+
+    const gridColor = 'rgba(51,65,85,0.35)';
+    const tooltipBg = 'rgba(2,6,23,0.95)';
+    const tooltipBorder = 'rgba(6,182,212,0.4)';
+
+    Chart.defaults.plugins.tooltip.backgroundColor = tooltipBg;
+    Chart.defaults.plugins.tooltip.borderColor = tooltipBorder;
+    Chart.defaults.plugins.tooltip.borderWidth = 1;
+    Chart.defaults.plugins.tooltip.titleColor = '#22d3ee';
+    Chart.defaults.plugins.tooltip.bodyColor = '#e2e8f0';
+    Chart.defaults.plugins.legend.labels.color = '#94a3b8';
+    Chart.defaults.plugins.legend.labels.font = { family: "'Share Tech Mono', monospace", size: 11 };
+
+    // ---- 1. Risk Score Trend (line with per-point level color) ----
+    {% if risk_trend.labels %}
+    const riskData = {{ risk_trend | tojson }};
+    new Chart(document.getElementById('riskTrendChart'), {
+        type: 'line',
+        data: {
+            labels: riskData.labels,
+            datasets: [{
+                label: 'Risk Score',
+                data: riskData.scores,
+                borderColor: '#06b6d4',
+                backgroundColor: 'rgba(6,182,212,0.15)',
+                pointBackgroundColor: riskData.colors,
+                pointBorderColor: riskData.colors,
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                tension: 0.3,
+                fill: true,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (ctx) => riskData.labels[ctx[0].dataIndex],
+                        afterLabel: (ctx) => {
+                            const i = ctx.dataIndex;
+                            return 'Target: ' + riskData.targets[i] + '\nLevel: ' + riskData.levels[i];
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: { beginAtZero: true, max: 100, grid: { color: gridColor } },
+                x: { ticks: { maxRotation: 45 }, grid: { color: gridColor } }
+            }
+        }
+    });
+    {% endif %}
+
+    // ---- 2. Risk Level Distribution (doughnut) ----
+    {% if risk_distribution.labels %}
+    const dist = {{ risk_distribution | tojson }};
+    const distColors = { 'CRITICAL': '#dc3545', 'HIGH': '#fd7e14', 'MEDIUM': '#ffc107', 'LOW': '#28a745' };
+    new Chart(document.getElementById('riskDistChart'), {
+        type: 'doughnut',
+        data: {
+            labels: dist.labels,
+            datasets: [{
+                data: dist.counts,
+                backgroundColor: dist.labels.map(l => distColors[l] || '#38bdf8'),
+                borderColor: '#0f172a',
+                borderWidth: 2,
+                hoverOffset: 6
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: { callbacks: { label: (ctx) => ' ' + ctx.label + ': ' + ctx.parsed + ' scan(s)' } }
+            }
+        }
+    });
+    {% endif %}
+
+    // ---- 3. Exposure vs Threat Trend (dual-line) ----
+    {% if exp_threat_trend.labels %}
+    const et = {{ exp_threat_trend | tojson }};
+    new Chart(document.getElementById('expThreatChart'), {
+        type: 'line',
+        data: {
+            labels: et.labels,
+            datasets: [
+                {
+                    label: 'Exposure', data: et.exposure,
+                    borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,0.12)',
+                    tension: 0.3, fill: true, borderWidth: 2, pointRadius: 4
+                },
+                {
+                    label: 'Threat', data: et.threat,
+                    borderColor: '#d946ef', backgroundColor: 'rgba(217,70,239,0.12)',
+                    tension: 0.3, fill: true, borderWidth: 2, pointRadius: 4
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: {
+                    callbacks: {
+                        title: (ctx) => et.labels[ctx[0].dataIndex],
+                        afterLabel: (ctx) => [0, 1].includes(ctx.datasetIndex) ? 'Target: ' + et.targets[ctx.dataIndex] : ''
+                    }
+                }
+            },
+            scales: {
+                y: { beginAtZero: true, max: 100, grid: { color: gridColor } },
+                x: { ticks: { maxRotation: 45 }, grid: { color: gridColor } }
+            }
+        }
+    });
+    {% endif %}
+
+    // ---- 4. Scan Activity (bar) ----
+    {% if activity.labels %}
+    const act = {{ activity | tojson }};
+    new Chart(document.getElementById('activityChart'), {
+        type: 'bar',
+        data: {
+            labels: act.labels,
+            datasets: [{
+                label: 'Scans', data: act.counts,
+                backgroundColor: 'rgba(6,182,212,0.7)',
+                borderColor: '#22d3ee', borderWidth: 1, borderRadius: 3
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } },
+                x: { ticks: { maxRotation: 60, maxTicksLimit: 7 }, grid: { color: gridColor } }
+            }
+        }
+    });
+    {% endif %}
+
+    // ---- 5. Top Targets (horizontal bar) ----
+    {% if top_targets.labels %}
+    const tt = {{ top_targets | tojson }};
+    new Chart(document.getElementById('topTargetsChart'), {
+        type: 'bar',
+        data: {
+            labels: tt.labels,
+            datasets: [{
+                label: 'Risk Score', data: tt.scores,
+                backgroundColor: tt.colors.map(c => c + 'cc'),
+                borderColor: tt.colors, borderWidth: 1, borderRadius: 3
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (ctx) => ' Risk: ' + ctx.parsed.x + '/100' } }
+            },
+            scales: {
+                x: { beginAtZero: true, max: 100, grid: { color: gridColor } },
+                y: { grid: { color: gridColor } }
+            }
+        }
+    });
+    {% endif %}
+
+    // ---- 6. Profile Verdicts (horizontal bar) ----
+    {% if profile_distribution.labels %}
+    const prof = {{ profile_distribution | tojson }};
+    const profColors = ['#06b6d4', '#d946ef', '#f59e0b', '#10b981', '#64748b', '#38bdf8', '#f472b6', '#a78bfa'];
+    new Chart(document.getElementById('profileChart'), {
+        type: 'bar',
+        data: {
+            labels: prof.labels,
+            datasets: [{
+                label: 'Scans', data: prof.counts,
+                backgroundColor: prof.labels.map((_, i) => profColors[i % profColors.length] + 'cc'),
+                borderColor: prof.labels.map((_, i) => profColors[i % profColors.length]),
+                borderWidth: 1, borderRadius: 3
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } },
+                y: { grid: { color: gridColor } }
+            }
+        }
+    });
+    {% endif %}
+});
+</script>
+{% endblock %}

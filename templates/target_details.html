@@ -125,20 +125,32 @@
             <p class="text-slate-300"><strong class="text-slate-400">Open Ports:</strong> {{ scan.shodan_data | parse_json_field('ports', scan.shodan_data) }}</p>
 
             <!-- Known Vulnerabilities / Threat Context Section -->
+            {% set vulns = shodan.enriched_vulns %}
             <div class="mt-4 pt-3 border-t border-slate-800">
-                <h5 class="text-amber-400 font-bold mb-2">KNOWN VULNERABILITIES & FOOTPRINT</h5>
-                {% set vulns = shodan.enriched_vulns %}
                 {% if vulns and vulns|length > 0 %}
-                    {% for vuln in vulns %}
-                        <div class="bg-red-950/40 border border-red-900/50 rounded p-2 mb-2">
-                            <div class="flex justify-between items-center">
-                                <strong class="text-red-400">{{ vuln.cve_id }}</strong>
-                                <span class="bg-red-900 text-red-200 text-[10px] px-1.5 py-0.5 rounded">CVSS {{ vuln.score }} - {{ vuln.severity }}</span>
+                <button type="button" onclick="toggleVulns()" id="vuln-toggle" class="w-full flex items-center justify-between text-left cursor-pointer group">
+                    <span class="flex items-center gap-2">
+                        <span class="text-amber-400 font-bold">KNOWN VULNERABILITIES &amp; FOOTPRINT</span>
+                        <span class="bg-red-900 text-red-200 text-[10px] px-1.5 py-0.5 rounded font-bold">{{ vulns|length }} CVE(s)</span>
+                    </span>
+                    <span class="text-slate-400 group-hover:text-amber-400 transition"><i class="fa-solid fa-chevron-down" id="vuln-chevron"></i></span>
+                </button>
+                <p class="mt-2 text-slate-400 text-[10px]">Click to {{ 'collapse' if false else 'expand' }} the full vulnerability list</p>
+                <div id="vuln-body" class="mt-2 hidden transition-all">
+                    <div class="max-h-72 overflow-y-auto pr-1 space-y-2">
+                        {% for vuln in vulns %}
+                            <div class="bg-red-950/40 border border-red-900/50 rounded p-2">
+                                <div class="flex justify-between items-center">
+                                    <strong class="text-red-400">{{ vuln.cve_id }}</strong>
+                                    <span class="bg-red-900 text-red-200 text-[10px] px-1.5 py-0.5 rounded">CVSS {{ vuln.score }} - {{ vuln.severity }}</span>
+                                </div>
+                                <small class="block mt-1 text-slate-300 text-[11px]">{{ vuln.description }}</small>
                             </div>
-                            <small class="block mt-1 text-slate-300 text-[11px]">{{ vuln.description }}</small>
-                        </div>
-                    {% endfor %}
+                        {% endfor %}
+                    </div>
+                </div>
                 {% else %}
+                    <h5 class="text-amber-400 font-bold mb-2">KNOWN VULNERABILITIES &amp; FOOTPRINT</h5>
                     <div class="bg-emerald-950/40 border border-emerald-900/50 text-center rounded p-2 text-emerald-400">
                         <strong>🛡️ System Secure</strong>
                         <p class="mb-0 text-[10px] text-slate-300">No known vulnerabilities linked to this target footprint.</p>
@@ -187,6 +199,27 @@
                 <strong>No risk indicators detected for this target.</strong>
             </div>
         {% endif %}
+    </div>
+
+    <!-- Findings Analytics: per-scan charts derived from the report data -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl">
+        <h3 class="font-cyber font-bold text-sm tracking-wider text-cyan-400 uppercase border-b border-slate-800 pb-2 mb-3">
+            <i class="fa-solid fa-chart-simple mr-2 text-fuchsia-500"></i> Findings Analytics
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+                <h5 class="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2">Findings by Severity</h5>
+                <div class="relative h-48"><canvas id="scanSeverityChart"></canvas></div>
+            </div>
+            <div>
+                <h5 class="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2">Findings by Category</h5>
+                <div class="relative h-48"><canvas id="scanCategoryChart"></canvas></div>
+            </div>
+            <div>
+                <h5 class="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2">CVEs by Severity</h5>
+                <div class="relative h-48"><canvas id="scanCveChart"></canvas></div>
+            </div>
+        </div>
     </div>
 
     <!-- Extended Metadata Grid (Domain Registration & TLS) -->
@@ -309,6 +342,63 @@
 
 {% block extra_scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+    // ---- Collapsible vulnerability list toggle ----
+    function toggleVulns() {
+        const body = document.getElementById('vuln-body');
+        const chevron = document.getElementById('vuln-chevron');
+        if (!body || !chevron) return;
+        const isOpen = !body.classList.contains('hidden');
+        body.classList.toggle('hidden', isOpen);
+        chevron.classList.toggle('fa-chevron-down', isOpen);
+        chevron.classList.toggle('fa-chevron-up', !isOpen);
+    }
+
+    // ---- Findings Analytics charts (only render when Chart.js loaded) ----
+    document.addEventListener('DOMContentLoaded', function () {
+        if (typeof Chart === 'undefined') return;
+
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = "'Share Tech Mono', monospace";
+        Chart.defaults.font.size = 11;
+        Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(2,6,23,0.95)';
+        Chart.defaults.plugins.tooltip.borderColor = 'rgba(6,182,212,0.4)';
+        Chart.defaults.plugins.tooltip.borderWidth = 1;
+        Chart.defaults.plugins.legend.labels.color = '#94a3b8';
+        Chart.defaults.plugins.legend.labels.font = { family: "'Share Tech Mono', monospace", size: 10 };
+
+        // 1. Findings by Severity (doughnut)
+        const sev = {{ chart_findings_by_severity | tojson }};
+        if (document.getElementById('scanSeverityChart')) {
+            new Chart(document.getElementById('scanSeverityChart'), {
+                type: 'doughnut',
+                data: { labels: sev.labels, datasets: [{ data: sev.counts, backgroundColor: sev.colors, borderColor: '#0f172a', borderWidth: 2, hoverOffset: 6 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + c.parsed + ' finding(s)' } } } }
+            });
+        }
+
+        // 2. Findings by Category (exposure vs threat)
+        const cat = {{ chart_findings_by_category | tojson }};
+        if (document.getElementById('scanCategoryChart')) {
+            new Chart(document.getElementById('scanCategoryChart'), {
+                type: 'doughnut',
+                data: { labels: cat.labels, datasets: [{ data: cat.counts, backgroundColor: cat.colors, borderColor: '#0f172a', borderWidth: 2, hoverOffset: 6 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + c.parsed + ' finding(s)' } } } }
+            });
+        }
+
+        // 3. CVEs by Severity (doughnut; shows UNKNOWN if present)
+        const cve = {{ chart_cves_by_severity | tojson }};
+        if (document.getElementById('scanCveChart')) {
+            new Chart(document.getElementById('scanCveChart'), {
+                type: 'doughnut',
+                data: { labels: cve.labels, datasets: [{ data: cve.counts, backgroundColor: cve.colors, borderColor: '#0f172a', borderWidth: 2, hoverOffset: 6 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + c.parsed + ' CVE(s)' } } } }
+            });
+        }
+    });
+</script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const mapEl = document.getElementById('geo-map');

@@ -65,6 +65,10 @@
                     <i class="fa-solid fa-clock-rotate-left w-5 text-center shrink-0"></i>
                     <span class="sidebar-text">Scan History</span>
                 </a>
+                <a href="/analytics" class="flex items-center gap-3 px-4 py-3 {% if active_page == 'analytics' %}bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-400 font-bold{% else %}text-slate-400 hover:text-slate-100 hover:bg-slate-800/50{% endif %} rounded transition">
+                    <i class="fa-solid fa-chart-line w-5 text-center shrink-0"></i>
+                    <span class="sidebar-text">Analytics</span>
+                </a>
                 {% if current_user.role == 'admin' %}
                 <a href="/control-panel" class="flex items-center gap-3 px-4 py-3 {% if active_page == 'control_panel' %}bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-400 font-bold{% else %}text-slate-400 hover:text-slate-100 hover:bg-slate-800/50{% endif %} rounded transition">
                     <i class="fa-solid fa-sliders w-5 text-center shrink-0"></i>

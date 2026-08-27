@@ -251,6 +251,97 @@ def history():
              .all())
     return render_template('history.html', scans=scans, active_page='history')
 
+
+@app.route('/analytics')
+@login_required
+def analytics():
+    """
+    Aggregates the current user's scan history into datasets that drive
+    the Chart.js dashboards: risk trend over time, risk-level distribution,
+    Exposure-vs-Threat trend, top targets, scan activity and profile verdicts.
+    """
+    scans = (ScanResult.query
+             .filter_by(user_id=current_user.id)
+             .order_by(ScanResult.scan_date.asc())
+             .all())
+
+    # Empty state: still render the page with empty datasets so the user sees
+    # a consistent layout prompting them to run scans.
+    def date_label(dt):
+        return dt.strftime('%Y-%m-%d') if dt else 'N/A'
+
+    risk_trend = {
+        "labels": [date_label(s.scan_date) for s in scans],
+        "scores": [round(s.risk_score or 0) for s in scans],
+        "colors": [s.risk_color or '#38bdf8' for s in scans],
+        "targets": [s.target for s in scans],
+        "levels": [s.risk_level or 'LOW' for s in scans],
+    }
+
+    # Distribution of risk levels
+    level_counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
+    for s in scans:
+        lvl = (s.risk_level or 'LOW').upper()
+        level_counts[lvl] = level_counts.get(lvl, 0) + 1
+    risk_distribution = {
+        "labels": list(level_counts.keys()),
+        "counts": list(level_counts.values()),
+    }
+
+    # Exposure vs Threat index trend
+    exp_threat_trend = {
+        "labels": [date_label(s.scan_date) for s in scans],
+        "exposure": [round(s.exposure_index or 0) for s in scans],
+        "threat": [round(s.threat_index or 0) for s in scans],
+        "targets": [s.target for s in scans],
+    }
+
+    # Top targets by risk score (all-time)
+    top_targets_data = {}
+    for s in scans:
+        tgt = s.target
+        if tgt not in top_targets_data or (s.risk_score or 0) > top_targets_data[tgt][0]:
+            top_targets_data[tgt] = (s.risk_score or 0, s.risk_color or '#38bdf8')
+    ordered = sorted(top_targets_data.items(), key=lambda kv: kv[1][0], reverse=True)[:8]
+    top_targets = {
+        "labels": [t for t, _ in ordered],
+        "scores": [v[0] for _, v in ordered],
+        "colors": [v[1] for _, v in ordered],
+    }
+
+    # Scan activity: number of scans per day (last 14 days including empty days)
+    from collections import Counter
+    from datetime import timedelta
+    today = datetime.now(timezone.utc).date()
+    activity_days = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(13, -1, -1)]
+    counter = Counter(date_label(s.scan_date) for s in scans if s.scan_date)
+    activity = {
+        "labels": activity_days,
+        "counts": [counter.get(d, 0) for d in activity_days],
+    }
+
+    # Profile verdict distribution
+    profile_counts = {}
+    for s in scans:
+        p = s.profile or 'Low Concern — Apparently Sound Resource'
+        profile_counts[p] = profile_counts.get(p, 0) + 1
+    profile_distribution = {
+        "labels": list(profile_counts.keys()),
+        "counts": list(profile_counts.values()),
+    }
+
+    return render_template(
+        'analytics.html',
+        scans=scans,
+        risk_trend=risk_trend,
+        risk_distribution=risk_distribution,
+        exp_threat_trend=exp_threat_trend,
+        top_targets=top_targets,
+        activity=activity,
+        profile_distribution=profile_distribution,
+        active_page='analytics'
+    )
+
 @app.route('/delete-scan/<int:scan_id>', methods=['POST'])
 @login_required
 def delete_scan(scan_id):
@@ -392,6 +483,46 @@ def view_scan_details(scan_id):
     if not isinstance(findings_list, list):
         findings_list = []
 
+    # --- Per-scan chart datasets (derived from the report's own data) ---
+    # 1. Correlation findings by severity
+    sev_order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+    sev_counts = {s: 0 for s in sev_order}
+    for f in findings_list:
+        sev = str(f.get('severity', 'LOW')).upper()
+        sev_counts[sev] = sev_counts.get(sev, 0) + 1
+    chart_findings_by_severity = {
+        "labels": sev_order,
+        "counts": [sev_counts[s] for s in sev_order],
+        "colors": ['#dc3545', '#fd7e14', '#ffc107', '#28a745'],
+    }
+
+    # 2. Correlation findings by category (Exposure vs Threat)
+    cat_counts = {'EXPOSURE': 0, 'THREAT': 0}
+    for f in findings_list:
+        cat = str(f.get('category', 'exposure')).upper()
+        cat_counts['THREAT' if cat == 'THREAT' else 'EXPOSURE'] += 1
+    chart_findings_by_category = {
+        "labels": ['EXPOSURE', 'THREAT'],
+        "counts": [cat_counts['EXPOSURE'], cat_counts['THREAT']],
+        "colors": ['#06b6d4', '#d946ef'],
+    }
+
+    # 3. Known CVEs by severity (from Shodan enriched_vulns)
+    cve_counts = {s: 0 for s in sev_order}
+    for v in (shodan_dict.get('enriched_vulns') or []):
+        sev = str(v.get('severity', 'UNKNOWN')).upper()
+        if sev not in cve_counts:
+            cve_counts[sev] = 0
+        cve_counts[sev] += 1
+    # Include UNKNOWN only if present
+    cve_severities = list(cve_counts.keys())
+    cve_counts_ordered = cve_counts
+    chart_cves_by_severity = {
+        "labels": cve_severities,
+        "counts": [cve_counts_ordered[s] for s in cve_severities],
+        "colors": ['#dc3545', '#fd7e14', '#ffc107', '#28a745', '#64748b'],
+    }
+
     # Band colors for the Exposure/Threat profile bars
     profile_colors = {
         'LOW': '#28a745',
@@ -450,6 +581,9 @@ def view_scan_details(scan_id):
         display_score_level=score_level,
         display_score_color=score_color,
         display_verdict=verdict,
+        chart_findings_by_severity=chart_findings_by_severity,
+        chart_findings_by_category=chart_findings_by_category,
+        chart_cves_by_severity=chart_cves_by_severity,
         active_page='home'
     )
 
