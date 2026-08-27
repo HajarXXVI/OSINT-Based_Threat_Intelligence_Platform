@@ -3,7 +3,7 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from flask_bcrypt import Bcrypt
 from sqlalchemy import inspect, text
 from config import Config
-from models import db, User, ScanResult
+from models import db, User, ScanResult, AuditLog
 from engine.correlator import analyze_target
 import json
 import socket
@@ -222,7 +222,8 @@ def control_panel():
         flash('Admin privileges required.', 'danger')
         return redirect(url_for('index'))
     users = User.query.all()
-    return render_template('control_panel.html', users=users, active_page='control_panel')
+    audit_logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(100).all()
+    return render_template('control_panel.html', users=users, audit_logs=audit_logs, active_page='control_panel')
 
 @app.route('/delete-user/<int:user_id>', methods=['POST'])
 @login_required
@@ -377,9 +378,27 @@ def scan_target():
     nvd_key = (app.config.get('NVD_API_KEY')
                or getattr(Config, 'NVD_API_KEY', None))
 
+    # Capture request info for audit logging (before thread)
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    user_agent = request.headers.get('User-Agent', '')
+    owner_id = current_user.id
+    owner_username = current_user.username
+
+    # Audit log: scan started
+    audit = AuditLog(
+        user_id=owner_id,
+        username=owner_username,
+        action='scan_started',
+        target=validated_target,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        details=json.dumps({'method': 'ajax' if is_ajax else 'form'})
+    )
+    db.session.add(audit)
+    db.session.commit()
+
     # Launch the scan on a background thread so the browser can stream progress.
     job_id = uuid.uuid4().hex
-    owner_id = current_user.id  # capture before the thread (thread has no request context)
     SCAN_JOBS[job_id] = {"target": validated_target, "lines": [], "done": False, "result_url": None, "error": None}
 
     def run_scan():
@@ -418,8 +437,39 @@ def scan_target():
                 # Background thread has no request context, so build the
                 # report URL from the fixed route instead of url_for().
                 SCAN_JOBS[job_id]["result_url"] = f"/scan/{new_scan.id}"
+
+                # Audit log: scan completed
+                audit_complete = AuditLog(
+                    user_id=owner_id,
+                    username=owner_username,
+                    action='scan_completed',
+                    target=validated_target,
+                    scan_id=new_scan.id,
+                    ip_address=client_ip,
+                    user_agent=user_agent,
+                    details=json.dumps({
+                        'risk_score': scan_data['risk_score'],
+                        'risk_level': scan_data['risk_level'],
+                        'findings_count': len(scan_data.get('findings', []))
+                    })
+                )
+                db.session.add(audit_complete)
+                db.session.commit()
         except Exception as e:
             SCAN_JOBS[job_id]["error"] = str(e)
+            # Audit log: scan failed
+            with app.app_context():
+                audit_fail = AuditLog(
+                    user_id=owner_id,
+                    username=owner_username,
+                    action='scan_failed',
+                    target=validated_target,
+                    ip_address=client_ip,
+                    user_agent=user_agent,
+                    details=json.dumps({'error': str(e)})
+                )
+                db.session.add(audit_fail)
+                db.session.commit()
         finally:
             SCAN_JOBS[job_id]["done"] = True
 
@@ -599,6 +649,26 @@ def view_scan_details(scan_id):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+
+        # Create audit_log table if it doesn't exist (new table migration)
+        inspector = inspect(db.engine)
+        tables = inspector.get_table_names()
+        if 'audit_log' not in tables:
+            db.session.execute(text("""
+                CREATE TABLE audit_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    username VARCHAR(80) NOT NULL,
+                    action VARCHAR(50) NOT NULL,
+                    target VARCHAR(100),
+                    scan_id INTEGER,
+                    ip_address VARCHAR(45),
+                    user_agent VARCHAR(255),
+                    details TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            db.session.commit()
 
         # Lightweight migration: add any missing columns to existing DBs
         inspector = inspect(db.engine)

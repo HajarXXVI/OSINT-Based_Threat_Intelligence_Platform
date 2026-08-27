@@ -366,34 +366,55 @@
         Chart.defaults.plugins.legend.labels.color = '#94a3b8';
         Chart.defaults.plugins.legend.labels.font = { family: "'Share Tech Mono', monospace", size: 10 };
 
+        // Helper: check if all counts are zero
+        function allZero(counts) { return counts.every(c => c === 0); }
+        function renderEmptyState(canvasId, message) {
+            const ctx = document.getElementById(canvasId);
+            if (!ctx) return;
+            const parent = ctx.parentElement;
+            parent.innerHTML = '<div class="flex items-center justify-center h-full text-slate-500 text-xs font-mono">' + message + '</div>';
+        }
+
         // 1. Findings by Severity (doughnut)
         const sev = {{ chart_findings_by_severity | tojson }};
         if (document.getElementById('scanSeverityChart')) {
-            new Chart(document.getElementById('scanSeverityChart'), {
-                type: 'doughnut',
-                data: { labels: sev.labels, datasets: [{ data: sev.counts, backgroundColor: sev.colors, borderColor: '#0f172a', borderWidth: 2, hoverOffset: 6 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + c.parsed + ' finding(s)' } } } }
-            });
+            if (allZero(sev.counts)) {
+                renderEmptyState('scanSeverityChart', 'No correlation findings generated');
+            } else {
+                new Chart(document.getElementById('scanSeverityChart'), {
+                    type: 'doughnut',
+                    data: { labels: sev.labels, datasets: [{ data: sev.counts, backgroundColor: sev.colors, borderColor: '#0f172a', borderWidth: 2, hoverOffset: 6 }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + c.parsed + ' finding(s)' } } } }
+                });
+            }
         }
 
         // 2. Findings by Category (exposure vs threat)
         const cat = {{ chart_findings_by_category | tojson }};
         if (document.getElementById('scanCategoryChart')) {
-            new Chart(document.getElementById('scanCategoryChart'), {
-                type: 'doughnut',
-                data: { labels: cat.labels, datasets: [{ data: cat.counts, backgroundColor: cat.colors, borderColor: '#0f172a', borderWidth: 2, hoverOffset: 6 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + c.parsed + ' finding(s)' } } } }
-            });
+            if (allZero(cat.counts)) {
+                renderEmptyState('scanCategoryChart', 'No correlation findings generated');
+            } else {
+                new Chart(document.getElementById('scanCategoryChart'), {
+                    type: 'doughnut',
+                    data: { labels: cat.labels, datasets: [{ data: cat.counts, backgroundColor: cat.colors, borderColor: '#0f172a', borderWidth: 2, hoverOffset: 6 }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + c.parsed + ' finding(s)' } } } }
+                });
+            }
         }
 
         // 3. CVEs by Severity (doughnut; shows UNKNOWN if present)
         const cve = {{ chart_cves_by_severity | tojson }};
         if (document.getElementById('scanCveChart')) {
-            new Chart(document.getElementById('scanCveChart'), {
-                type: 'doughnut',
-                data: { labels: cve.labels, datasets: [{ data: cve.counts, backgroundColor: cve.colors, borderColor: '#0f172a', borderWidth: 2, hoverOffset: 6 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + c.parsed + ' CVE(s)' } } } }
-            });
+            if (allZero(cve.counts)) {
+                renderEmptyState('scanCveChart', 'No CVEs associated with this target');
+            } else {
+                new Chart(document.getElementById('scanCveChart'), {
+                    type: 'doughnut',
+                    data: { labels: cve.labels, datasets: [{ data: cve.counts, backgroundColor: cve.colors, borderColor: '#0f172a', borderWidth: 2, hoverOffset: 6 }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + c.parsed + ' CVE(s)' } } } }
+                });
+            }
         }
     });
 </script>

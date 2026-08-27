@@ -47,3 +47,22 @@ class ScanResult(db.Model):
 
     def __repr__(self):
         return f"<ScanResult {self.target} - Score: {self.risk_score}>"
+
+
+class AuditLog(db.Model):
+    """
+    Audit trail for compliance: who scanned what and when.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    username = db.Column(db.String(80), nullable=False)  # denormalized for easy display
+    action = db.Column(db.String(50), nullable=False)  # e.g., 'scan_started', 'scan_completed', 'scan_failed'
+    target = db.Column(db.String(100), nullable=True)
+    scan_id = db.Column(db.Integer, db.ForeignKey('scan_result.id'), nullable=True)
+    ip_address = db.Column(db.String(45), nullable=True)  # IPv4 or IPv6
+    user_agent = db.Column(db.String(255), nullable=True)
+    details = db.Column(db.Text, nullable=True)  # JSON for extra context
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    def __repr__(self):
+        return f"<AuditLog {self.username} - {self.action} - {self.target}>"
