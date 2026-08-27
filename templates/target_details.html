@@ -18,8 +18,8 @@
         <div class="flex items-center gap-6">
             <div class="text-right">
                 <span class="text-xs font-mono text-slate-400 uppercase tracking-widest block">Risk Score Assessment</span>
-                <span class="text-lg font-bold font-mono" style="color: {{ scan.risk_color|default('#38bdf8') }};">
-                    {{ scan.risk_score }}/100 [{{ scan.risk_level }}]
+                <span class="text-lg font-bold font-mono" style="color: {{ display_score_color|default(scan.risk_color|default('#38bdf8')) }};">
+                    {{ scan.risk_score }}/100 [{{ display_score_level|default(scan.risk_level) }}]
                 </span>
             </div>
             <a href="/" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-cyber font-black uppercase text-xs tracking-widest transition rounded border border-slate-700">
@@ -33,7 +33,7 @@
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <span class="text-xs font-mono text-slate-400 uppercase tracking-widest">Target Profile — Exposure vs Threat</span>
-                <h3 class="font-cyber font-bold text-xl tracking-wider text-cyan-400 neon-text-cyan mt-1">{{ scan.profile or 'Analyse Indisponible' }}</h3>
+                <h3 class="font-cyber font-bold text-xl tracking-wider mt-1" style="color: {{ '#94a3b8' if show_osint_explainer else '#06b6d4' }};">{{ display_verdict|default(scan.profile) }}</h3>
                 <p class="text-[10px] font-mono text-slate-500 mt-1 uppercase tracking-wider">Exposure = can this target be compromised? · Threat = is this target dangerous to others?</p>
             </div>
             <div class="flex items-center gap-8">
@@ -68,6 +68,24 @@
             </div>
         </div>
     </div>
+
+    {% if show_osint_explainer %}
+    <!-- Passive-OSINT Explanation: shown when the scan detected no exposed infrastructure -->
+    <div class="bg-cyan-950/40 border border-cyan-800/60 rounded-lg p-5 shadow-xl space-y-3">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-satellite-dish text-cyan-400 text-2xl"></i>
+            <div>
+                <h3 class="font-cyber font-bold text-sm tracking-wider text-cyan-300 uppercase">Passive OSINT — No Exposed Network Signals Detected</h3>
+                <p class="text-slate-400 text-[11px] font-mono mt-1">A low passive score is <strong class="text-cyan-300">not proof</strong> the target is secure.</p>
+            </div>
+        </div>
+        <div class="space-y-2 text-slate-300 text-xs font-mono leading-relaxed">
+            <p><i class="fa-solid fa-angle-right text-cyan-400 mr-1"></i> ThreatLens performs <strong>passive intelligence</strong>: it reads public records from Shodan, NVD, and VirusTotal without ever contacting the target. It therefore assesses <strong>network exposure and reputation</strong>.</p>
+            <p><i class="fa-solid fa-angle-right text-cyan-400 mr-1"></i> This scan found <strong>no exposed ports and no known CVEs</strong>. That means either the host is genuinely hardened, <strong>or</strong> it sits behind a service such as a CDN/WAF that hides its true footprint, <strong>or</strong> its weaknesses live in the <strong>web application layer</strong> (e.g. SQL injection, XSS) — flaws that only active crawling reveals and that passive OSINT cannot see.</p>
+            <p><i class="fa-solid fa-angle-right text-cyan-400 mr-1"></i> For a complete verdict on a live web application, an <strong>active</strong> scanner would be required — which is deliberately outside ThreatLens's no-contact design.</p>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Intelligence Grid Widgets -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">

@@ -42,7 +42,7 @@ class ScanResult(db.Model):
     threat_index = db.Column(db.Float, default=0.0)
     exposure_band = db.Column(db.String(20), default="LOW")
     threat_band = db.Column(db.String(20), default="LOW")
-    profile = db.Column(db.String(120), default="Faible Préoccupation")
+    profile = db.Column(db.String(120), default="Low Concern — Apparently Sound Resource")
 
     def __repr__(self):
         return f"<ScanResult {self.target} - Score: {self.risk_score}>"

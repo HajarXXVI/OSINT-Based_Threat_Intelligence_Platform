@@ -47,13 +47,19 @@ def _parse_cve(item):
     }
 
 
-def get_cve_by_id(cve_id):
+def get_cve_by_id(cve_id, api_key=None):
     """
     Fetches a single CVE by its exact identifier (no fuzzy keyword search,
     so results are guaranteed to match the detected vulnerability).
+    An optional NVD API key raises the rate limit from 5 to 50 requests
+    per 30 seconds, enabling full CVE resolution for large findings.
     """
     try:
-        response = requests.get(NVD_BASE, params={"cveId": cve_id}, headers=NVD_HEADERS, timeout=8)
+        params = {"cveId": cve_id}
+        headers = dict(NVD_HEADERS)
+        if api_key:
+            headers["apiKey"] = api_key
+        response = requests.get(NVD_BASE, params=params, headers=headers, timeout=8)
         if response.status_code == 200:
             data = response.json()
             for item in data.get('vulnerabilities', []):

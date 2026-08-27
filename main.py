@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, url_for, request, flash, session
+from flask import Flask, render_template, redirect, url_for, request, flash, session, Response
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
 from sqlalchemy import inspect, text
@@ -7,6 +7,9 @@ from models import db, User, ScanResult
 from engine.correlator import analyze_target
 import json
 import socket
+import threading
+import uuid
+import time
 from datetime import datetime, timezone
 
 app = Flask(__name__)
@@ -23,6 +26,15 @@ login_manager.login_view = 'login'
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
+
+
+# --- Async scan jobs: task_id -> {"lines": [...], "done": bool, "result_url": str} ---
+SCAN_JOBS = {}
+
+
+def _report_job(job_id, message):
+    if job_id in SCAN_JOBS:
+        SCAN_JOBS[job_id]["lines"].append(message)
 
 
 def check_password(stored, candidate):
@@ -265,35 +277,94 @@ def scan_target():
     vt_key = (current_user.virustotal_key
               or app.config.get('VIRUSTOTAL_API_KEY')
               or getattr(Config, 'VIRUSTOTAL_API_KEY', None))
+    nvd_key = (app.config.get('NVD_API_KEY')
+               or getattr(Config, 'NVD_API_KEY', None))
 
-    # Run correlation engine WITH your API keys passed through
-    scan_data = analyze_target(validated_target, shodan_api_key=shodan_key, vt_api_key=vt_key)
+    # Launch the scan on a background thread so the browser can stream progress.
+    job_id = uuid.uuid4().hex
+    owner_id = current_user.id  # capture before the thread (thread has no request context)
+    SCAN_JOBS[job_id] = {"target": validated_target, "lines": [], "done": False, "result_url": None, "error": None}
 
-    # Save results to SQLite database
-    new_scan = ScanResult(
-        user_id=current_user.id,
-        target=validated_target,
-        scan_date=datetime.now(timezone.utc),
-        geolocation_data=json.dumps(scan_data['geolocation']),
-        shodan_data=json.dumps(scan_data['shodan']),
-        vt_data=json.dumps(scan_data['virustotal']),
-        whois_data=json.dumps(scan_data['whois_data']),
-        ssl_data=json.dumps(scan_data['ssl_data']),
-        findings_data=json.dumps(scan_data.get('findings', [])),
-        risk_score=scan_data['risk_score'],
-        risk_level=scan_data['risk_level'],
-        risk_color=scan_data.get('risk_color', '#38bdf8'),
-        exposure_index=scan_data.get('exposure_index', 0.0),
-        threat_index=scan_data.get('threat_index', 0.0),
-        exposure_band=scan_data.get('exposure_band', 'LOW'),
-        threat_band=scan_data.get('threat_band', 'LOW'),
-        profile=scan_data.get('profile', 'Faible Préoccupation')
-    )
-    db.session.add(new_scan)
-    db.session.commit()
+    def run_scan():
+        try:
+            scan_data = analyze_target(
+                validated_target,
+                shodan_api_key=shodan_key,
+                vt_api_key=vt_key,
+                nvd_api_key=nvd_key,
+                progress_callback=lambda msg: _report_job(job_id, msg),
+            )
+            with app.app_context():
+                # Save results to SQLite database
+                new_scan = ScanResult(
+                    user_id=owner_id,
+                    target=validated_target,
+                    scan_date=datetime.now(timezone.utc),
+                    geolocation_data=json.dumps(scan_data['geolocation']),
+                    shodan_data=json.dumps(scan_data['shodan']),
+                    vt_data=json.dumps(scan_data['virustotal']),
+                    whois_data=json.dumps(scan_data['whois_data']),
+                    ssl_data=json.dumps(scan_data['ssl_data']),
+                    findings_data=json.dumps(scan_data.get('findings', [])),
+                    risk_score=scan_data['risk_score'],
+                    risk_level=scan_data['risk_level'],
+                    risk_color=scan_data.get('risk_color', '#38bdf8'),
+                    exposure_index=scan_data.get('exposure_index', 0.0),
+                    threat_index=scan_data.get('threat_index', 0.0),
+                    exposure_band=scan_data.get('exposure_band', 'LOW'),
+                    threat_band=scan_data.get('threat_band', 'LOW'),
+                    profile=scan_data.get('profile', 'Low Concern — Apparently Sound Resource')
+                )
+                db.session.add(new_scan)
+                db.session.commit()
+                # Background thread has no request context, so build the
+                # report URL from the fixed route instead of url_for().
+                SCAN_JOBS[job_id]["result_url"] = f"/scan/{new_scan.id}"
+        except Exception as e:
+            SCAN_JOBS[job_id]["error"] = str(e)
+        finally:
+            SCAN_JOBS[job_id]["done"] = True
 
-    flash(f'Scan completed successfully for target: {target}', 'success')
-    return redirect(url_for('view_scan_details', scan_id=new_scan.id))
+    threading.Thread(target=run_scan, daemon=True).start()
+    return redirect(url_for('scan_progress', job_id=job_id))
+
+
+@app.route('/scan/progress/<job_id>')
+@login_required
+def scan_progress(job_id):
+    if job_id not in SCAN_JOBS:
+        flash('Scan job not found or already finished.', 'danger')
+        return redirect(url_for('index'))
+    return render_template('scan_progress.html', job_id=job_id, target=SCAN_JOBS[job_id]["target"], active_page='home')
+
+
+@app.route('/scan/progress/<job_id>/stream')
+@login_required
+def scan_progress_stream(job_id):
+    def generate():
+        sent = 0
+        while True:
+            job = SCAN_JOBS.get(job_id)
+            if job is None:
+                yield "event: error\ndata: job-expired\n\n"
+                return
+            lines = job["lines"]
+            while sent < len(lines):
+                yield f"data: {json.dumps({'line': lines[sent]})}\n\n"
+                sent += 1
+            if job["done"]:
+                if job["error"]:
+                    yield f"event: error\ndata: {json.dumps({'error': job['error']})}\n\n"
+                else:
+                    yield f"event: done\ndata: {json.dumps({'url': job['result_url']})}\n\n"
+                return
+            time.sleep(0.25)
+
+    return Response(generate(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+        'Connection': 'keep-alive',
+    })
 
 @app.route('/scan/<int:scan_id>')
 @login_required
@@ -337,6 +408,31 @@ def view_scan_details(scan_id):
 
     target_is_ip = _is_ip_address(scan.target)
 
+    # When Shodan reports no exposed ports AND no detected CVEs, show the user
+    # WHY the infrastructure score is low instead of leaving them to wonder.
+    # A low passive score does not prove a host is secure — it may simply be a
+    # web app whose flaws are invisible to passive OSINT (they only appear under
+    # active crawling), or a host hidden behind a CDN/WAF.
+    no_ports = not (shodan_dict.get('ports') or [])
+    no_cves = not (shodan_dict.get('enriched_vulns') or [])
+    show_osint_explainer = bool(no_ports and no_cves)
+
+    # When nothing was detected, soften the still-shown score so the page does
+    # not read as a green "this host is safe". Reuse the numeric score for
+    # consistency but neutralize its color and the profile verdict.
+    if show_osint_explainer:
+        score_color = '#94a3b8'            # neutral slate
+        score_level = 'NO SIGNAL'          # not LOW
+        verdict = 'No Passive Signals Detected'
+        bar_exposure_color = '#94a3b8'
+        bar_threat_color = '#94a3b8'
+    else:
+        score_color = scan.risk_color or '#38bdf8'
+        score_level = scan.risk_level or 'LOW'
+        verdict = scan.profile or 'Low Concern — Apparently Sound Resource'
+        bar_exposure_color = exposure_color
+        bar_threat_color = threat_color
+
     return render_template(
         'target_details.html',
         scan=scan,
@@ -344,9 +440,13 @@ def view_scan_details(scan_id):
         geolocation=geo_dict,
         virustotal=vt_dict,
         findings=findings_list,
-        exposure_color=exposure_color,
-        threat_color=threat_color,
+        exposure_color=bar_exposure_color,
+        threat_color=bar_threat_color,
         target_is_ip=target_is_ip,
+        show_osint_explainer=show_osint_explainer,
+        display_score_level=score_level,
+        display_score_color=score_color,
+        display_verdict=verdict,
         active_page='home'
     )
 
@@ -367,7 +467,7 @@ if __name__ == '__main__':
             'threat_index': 'ALTER TABLE scan_result ADD COLUMN threat_index FLOAT DEFAULT 0.0',
             'exposure_band': "ALTER TABLE scan_result ADD COLUMN exposure_band VARCHAR(20) DEFAULT 'LOW'",
             'threat_band': "ALTER TABLE scan_result ADD COLUMN threat_band VARCHAR(20) DEFAULT 'LOW'",
-            'profile': "ALTER TABLE scan_result ADD COLUMN profile VARCHAR(120) DEFAULT 'Faible Préoccupation'",
+            'profile': "ALTER TABLE scan_result ADD COLUMN profile VARCHAR(120) DEFAULT 'Low Concern — Apparently Sound Resource'",
         }
         for column, ddl in scan_migrations.items():
             if column not in columns:
@@ -387,4 +487,4 @@ if __name__ == '__main__':
             admin_user.role = 'admin'
             db.session.commit()
 
-    app.run(debug=True, use_reloader=False)
+    app.run(debug=True, use_reloader=False, threaded=True)

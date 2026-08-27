@@ -108,15 +108,15 @@ def calculate_profiles(findings):
     threat_band = _band_for(threat_index)
 
     if exposure_band in ("HIGH", "CRITICAL") and threat_band in ("HIGH", "CRITICAL"):
-        verdict = "Cible Exposée ET Acteur de Menace Potentiel"
+        verdict = "Exposed AND Potential Threat Actor"
     elif exposure_band in ("HIGH", "CRITICAL"):
-        verdict = "Cible Potentielle : Asset Exposé / Compromettable"
+        verdict = "Potential Target: Exposed / Compromisable Asset"
     elif threat_band in ("HIGH", "CRITICAL"):
-        verdict = "Acteur de Menace Potentiel"
+        verdict = "Potential Threat Actor"
     elif exposure_band == "MEDIUM" or threat_band == "MEDIUM":
-        verdict = "Préoccupation Modérée"
+        verdict = "Moderate Concern"
     else:
-        verdict = "Faible Préoccupation — Ressource A Priori Saine"
+        verdict = "Low Concern — Apparently Sound Resource"
 
     return {
         "exposure_index": exposure_index,

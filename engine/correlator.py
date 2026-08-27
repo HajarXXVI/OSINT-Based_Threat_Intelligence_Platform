@@ -2,6 +2,7 @@
 import socket
 import requests
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from apis.shodan_api import get_shodan_host_info
 from apis.nvd_api import get_cve_by_id
 from apis.metadata_api import get_whois_info, get_ssl_certificate_info
@@ -10,6 +11,12 @@ from engine.scorer import calculate_score, calculate_profiles
 SEVERITY_ORDER = {"UNKNOWN": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 
 DATABASE_PORTS = {1433, 3306, 5432}
+
+# Capping the per-scan NVD resolutions keeps scans fast even when
+# InternetDB reports a very large number of CVE IDs for one host.
+# With an NVD API key (full rate limit) the cap is lifted and every
+# CVE is resolved so the score reflects the complete vulnerability set.
+MAX_NVD_RESOLUTIONS = 12
 
 
 class ThreatCorrelator:
@@ -53,35 +60,35 @@ class ThreatCorrelator:
     def _check_ports(self):
         if 3389 in self.ports:
             self._add_finding(
-                "RDP Exposé Publiquement", "HIGH",
-                "Le port 3389 (RDP) est ouvert sur l'internet public, exposant la cible au brute-force et aux exploits.",
-                "Restreindre l'accès RDP via un VPN ou une liste blanche IP.")
+                "RDP Publicly Exposed", "HIGH",
+                "Port 3389 (RDP) is open to the public internet, exposing the target to brute-force and exploits.",
+                "Restrict RDP access via a VPN or an IP allowlist.")
         if 22 in self.ports:
             self._add_finding(
-                "SSH Exposé Publiquement", "MEDIUM",
-                "Le port 22 (SSH) est ouvert; il peut subir des tentatives de brute-force ou de credential stuffing.",
-                "Limiter l'accès SSH et privilégier l'authentification par clé.")
+                "SSH Publicly Exposed", "MEDIUM",
+                "Port 22 (SSH) is open; it may face brute-force or credential-stuffing attempts.",
+                "Limit SSH access and prefer key-based authentication.")
         db_ports = sorted(set(self.ports) & DATABASE_PORTS)
         if db_ports:
             self._add_finding(
-                "Base de Données Exposée Publiquement", "CRITICAL",
-                f"Port(s) de base de données {db_ports} exposé(s) directement sur Internet.",
-                "Fermer ces ports publiquement et accéder aux bases uniquement via le réseau interne ou un VPN.")
+                "Database Publicly Exposed", "CRITICAL",
+                f"Database port(s) {db_ports} exposed directly to the internet.",
+                "Close these ports publicly and reach databases only over the internal network or a VPN.")
         if 23 in self.ports:
             self._add_finding(
-                "Telnet Non Chiffré", "HIGH",
-                "Le port 23 (Telnet) transmet les identifiants en clair et ne doit jamais être exposé.",
-                "Désactiver Telnet et utiliser SSH.")
+                "Unencrypted Telnet", "HIGH",
+                "Port 23 (Telnet) transmits credentials in plaintext and should never be exposed.",
+                "Disable Telnet and use SSH.")
         if 21 in self.ports:
             self._add_finding(
-                "FTP Non Chiffré", "MEDIUM",
-                "Le port 21 (FTP) expose des transferts de fichiers non chiffrés.",
-                "Remplacer FTP par SFTP/FTPS.")
+                "Unencrypted FTP", "MEDIUM",
+                "Port 21 (FTP) exposes unencrypted file transfers.",
+                "Replace FTP with SFTP/FTPS.")
         if len(self.ports) > 20:
             self._add_finding(
-                "Surface d'Attaque Critiquement Étendue", "CRITICAL",
-                f"{len(self.ports)} ports ouverts détectés, élargissant considérablement la surface d'attaque.",
-                "Réduire l'exposition au strict minimum nécessaire.")
+                "Critically Extended Attack Surface", "CRITICAL",
+                f"{len(self.ports)} open ports detected, substantially widening the attack surface.",
+                "Reduce exposure to the bare minimum required.")
 
     # --- CVE rules (NVD / Shodan data) ---
     def _check_cves(self):
@@ -90,21 +97,21 @@ class ThreatCorrelator:
 
         if critical_cves:
             self._add_finding(
-                "Vulnérabilité(s) Critique(s) Décelée(s)", "CRITICAL",
-                f"{len(critical_cves)} CVE(s) avec score CVSS >= 9.0 : "
+                "Critical Vulnerabilities Detected", "CRITICAL",
+                f"{len(critical_cves)} CVE(s) with a CVSS score >= 9.0: "
                 + ", ".join(c["cve_id"] for c in critical_cves),
-                "Appliquer les correctifs de sécurité immédiatement et vérifier l'absence d'exploitation.")
+                "Apply security patches immediately and verify there is no active exploitation.")
         elif high_cves:
             self._add_finding(
-                "Vulnérabilités Élevées Non Corrigées", "HIGH",
-                f"{len(high_cves)} CVE(s) de sévérité élevée affectent les services détectés.",
-                "Prioriser la mise à jour des logiciels vulnérables.")
+                "Unpatched High Vulnerabilities", "HIGH",
+                f"{len(high_cves)} high-severity CVE(s) affect the detected services.",
+                "Prioritize updating the vulnerable software.")
 
         if len(self.cves) > 5:
             self._add_finding(
-                "Surface d'Attaque Vulnérable Étendue", "HIGH",
-                f"{len(self.cves)} vulnérabilités connues associées à cette cible.",
-                "Mettre en place un programme structuré de gestion des correctifs.")
+                "Extended Vulnerable Attack Surface", "HIGH",
+                f"{len(self.cves)} known vulnerabilities associated with this target.",
+                "Implement a structured patch-management program.")
 
     # --- Reputation rules (VirusTotal data) ---
     # Severity BANDS, not one finding per engine: this was the score bug.
@@ -112,15 +119,15 @@ class ThreatCorrelator:
     def _check_reputation(self):
         if self.vt_malicious >= 6:
             self._add_finding(
-                "Réputation Malveillante Confirmée", "CRITICAL",
-                f"Plus de 5 moteurs antivirus ({self.vt_malicious}) classent la cible comme malveillante.",
-                "Isoler la cible, analyser son trafic et vérifier une éventuelle compromission.",
+                "Confirmed Malicious Reputation", "CRITICAL",
+                f"More than 5 antivirus engines ({self.vt_malicious}) classify the target as malicious.",
+                "Isolate the target, analyze its traffic and check for possible compromise.",
                 category="threat")
         elif self.vt_malicious >= 1:
             self._add_finding(
-                "Réputation Suspecte", "MEDIUM",
-                f"{self.vt_malicious} moteur(s) antivirus signalent la cible comme malveillante.",
-                "Approfondir l'analyse avant de faire confiance à cette ressource.",
+                "Suspicious Reputation", "MEDIUM",
+                f"{self.vt_malicious} antivirus engine(s) flag the target as malicious.",
+                "Investigate further before trusting this resource.",
                 category="threat")
 
     # --- Cross-correlation rules (the differentiator) ---
@@ -132,19 +139,19 @@ class ThreatCorrelator:
 
         if has_rdp and has_critical_cve:
             self._add_finding(
-                "Intrusion Distante Potentielle", "CRITICAL",
-                "RDP exposé combiné à une vulnérabilité critique connue rend la cible potentiellement compromettable à distance.",
-                "Fermer RDP ou le placer derrière un VPN, puis corriger les vulnérabilités critiques.")
+                "Potential Remote Intrusion", "CRITICAL",
+                "Exposed RDP combined with a known critical vulnerability makes the target potentially compromisable remotely.",
+                "Close RDP or place it behind a VPN, then remediate the critical vulnerabilities.")
         if self.vt_malicious >= 1 and has_db_port:
             self._add_finding(
-                "Exfiltration de Données Probable", "CRITICAL",
-                "Réputation malveillante associée à un port de base de données exposé.",
-                "Surveiller les connexions sortantes et verrouiller l'accès aux bases de données.")
+                "Likely Data Exfiltration", "CRITICAL",
+                "Malicious reputation associated with an exposed database port.",
+                "Monitor outbound connections and lock down database access.")
         if self.vt_malicious >= 1 and has_ssh:
             self._add_finding(
-                "Credential Stuffing Possible", "HIGH",
-                "Cible à mauvaise réputation avec SSH exposé : risque de credential stuffing ou de brute-force.",
-                "Imposer une authentification forte et journaliser les tentatives de connexion.",
+                "Possible Credential Stuffing", "HIGH",
+                "Target with a bad reputation and exposed SSH: risk of credential stuffing or brute-force.",
+                "Enforce strong authentication and log connection attempts.",
                 category="threat")
 
 
@@ -189,53 +196,84 @@ def _get_virustotal(ip_address, vt_api_key):
     return vt_data
 
 
-def _resolve_unknown_cves(shodan_data):
+def _resolve_unknown_cves(shodan_data, nvd_api_key=None):
     """
     InternetDB returns CVE IDs without scores. Resolve each exact ID
     against NVD so every vulnerability has a real CVSS score/severity.
     No generic keyword search -> no fabricated CVEs -> no score inflation.
+
+    Resolutions run in parallel. Without an NVD API key they are also
+    capped (free tier allows ~5 requests per 30s; resolving hundreds of
+    IDs sequentially would block a scan for minutes). With a key the cap
+    is lifted and the complete CVE set is scored. Unresolved IDs keep
+    severity UNKNOWN and still count toward the "many vulnerabilities"
+    rule without inflating the score.
     """
     unresolved = [v for v in shodan_data.get("enriched_vulns", []) if v.get("severity") == "UNKNOWN"]
-    for vuln in unresolved:
-        resolved = get_cve_by_id(vuln["cve_id"])
+
+    def resolve(vuln):
+        resolved = get_cve_by_id(vuln["cve_id"], api_key=nvd_api_key)
         if resolved:
             vuln["score"] = resolved["score"]
             vuln["severity"] = resolved["severity"]
             vuln["description"] = resolved["description"]
+
+    cap = None if nvd_api_key else MAX_NVD_RESOLUTIONS
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(resolve, unresolved[:cap]))
     return shodan_data
 
 
-def analyze_target(target, shodan_api_key=None, vt_api_key=None):
+def analyze_target(target, shodan_api_key=None, vt_api_key=None, nvd_api_key=None, progress_callback=None):
+    def report(message):
+        if progress_callback:
+            progress_callback(message)
+
     ip_address = _resolve_ip(target.strip())
+    report(f"DNS resolution: {ip_address}")
 
     # 1. Geolocation (ip-api, free, no key)
+    report("Geolocation (ip-api)...")
     geo_data = _get_geolocation(ip_address)
+    report("Geolocation OK")
 
     # 2. Shodan: official API if a key is configured, else free InternetDB
+    report("Network footprint (Shodan)...")
     shodan_data = get_shodan_host_info(ip_address, api_key=shodan_api_key)
     if shodan_data["organization"] == "Unknown":
         shodan_data["organization"] = geo_data.get("org", "N/A")
+    report(f"{len(shodan_data.get('ports', []))} open port(s), {len(shodan_data.get('enriched_vulns', []))} CVE(s) found")
 
     # 3. NVD: resolve score-less CVE IDs by exact ID (no noise)
-    shodan_data = _resolve_unknown_cves(shodan_data)
+    report("Vulnerability scores (NVD)...")
+    shodan_data = _resolve_unknown_cves(shodan_data, nvd_api_key=nvd_api_key)
+    report("Vulnerabilities scored")
 
     # 4. VirusTotal reputation (0s if no key -> never fabricates detections)
+    report("Reputation (VirusTotal)...")
     vt_data = _get_virustotal(ip_address, vt_api_key)
+    report(f"Reputation: {vt_data.get('malicious', 0)} malicious engine(s)")
 
     # 5. Correlation + scoring
+    report("Correlating findings...")
     findings = ThreatCorrelator({
         "shodan": shodan_data,
         "virustotal": vt_data,
         "cves": shodan_data.get("enriched_vulns", [])
     }).correlate()
+    report(f"{len(findings)} finding(s) generated")
 
+    report("Calculating risk score and profiles...")
     risk_assessment = calculate_score(findings)
     profiles = calculate_profiles(findings)
+    report(f"Score: {risk_assessment['score']}/100 ({risk_assessment['level']})")
 
     # 6. Metadata summaries (WHOIS & SSL)
+    report("Domain metadata (RDAP) and TLS certificate...")
     whois_summary = get_whois_info(target)
     ssl_summary = get_ssl_certificate_info(target)
 
+    report("Analysis complete")
     return {
         "geolocation": geo_data,
         "shodan": shodan_data,

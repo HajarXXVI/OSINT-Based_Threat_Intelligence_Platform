@@ -358,7 +358,7 @@ python -m pip install -r requirements.txt
 ```
 
 Important environment notes:
-- The project runs on **Python 3.13**. The `py` launcher default may point at another version; set `PY_PYTHON=3.13` (or use `python main.py` with the correct interpreter).
+- Requirement: **Python 3.13** with the `requirements.txt` dependencies installed.
 - Internet access is required for live scans; the app itself runs offline.
 
 ---

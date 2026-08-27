@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}ThreatLens // Scan in Progress{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <!-- Scanning Header -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-6 shadow-xl">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="font-cyber font-bold text-lg tracking-widest text-cyan-400 neon-text-cyan uppercase">
+                    <i class="fa-solid fa-radar text-fuchsia-500 mr-2 animate-pulse"></i> Scan in Progress
+                </h2>
+                <p class="text-xs font-mono text-slate-400 mt-1 uppercase tracking-wider">
+                    Target: <span class="text-fuchsia-400 font-bold">{{ target }}</span>
+                </p>
+            </div>
+            <div id="status-badge" class="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-widest text-amber-400 border border-amber-500/30 bg-amber-950/30 rounded px-3 py-2">
+                <i class="fa-solid fa-circle text-[8px] animate-pulse"></i> Analyzing
+            </div>
+        </div>
+
+        <!-- Progress Stage Lines -->
+        <div class="mt-6 space-y-2 font-mono text-xs" id="progress-lines">
+            <div class="p-3 bg-slate-950/60 border border-slate-800/80 rounded flex items-center gap-3 text-slate-400">
+                <i class="fa-solid fa-rotate text-cyan-400 animate-spin"></i>
+                <span>Awaiting intelligence pipeline...</span>
+            </div>
+        </div>
+
+        <!-- Terminal-style output -->
+        <div class="mt-6">
+            <h3 class="text-xs font-mono text-slate-400 uppercase tracking-wider mb-2">
+                <i class="fa-solid fa-terminal text-cyan-400 mr-1"></i> Live Log
+            </h3>
+            <div id="live-log" class="bg-black/70 border border-slate-800 rounded p-4 h-48 overflow-y-auto font-mono text-[11px] text-emerald-400/90 space-y-1 whitespace-pre-wrap break-words">
+                <div class="text-slate-600"># Integrating external intelligence sources...</div>
+            </div>
+        </div>
+    </div>
+
+    <p class="text-center text-[11px] font-mono text-slate-600 mt-4 uppercase tracking-wider">
+        You will be redirected to the full report automatically when the analysis completes.
+    </p>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const jobId = {{ job_id | tojson }};
+const liveLog = document.getElementById('live-log');
+const linesBox = document.getElementById('progress-lines');
+const stepIcons = {
+    'Résolution DNS': 'fa-network-wired',
+    'Géolocalisation': 'fa-earth-africa',
+    'Footprint réseau': 'fa-server',
+    'Scores de vulnérabilités': 'fa-bug',
+    'Réputation': 'fa-shield-virus',
+    'Corrélation': 'fa-brain',
+    'Calcul du score': 'fa-gauge-high',
+    'Métadonnées': 'fa-file-signature',
+    'Analyse terminée': 'fa-check',
+};
+
+function pickIcon(line) {
+    for (const key of Object.keys(stepIcons)) {
+        if (line.includes(key)) return stepIcons[key];
+    }
+    return 'fa-angles-right';
+}
+
+function addLine(line) {
+    // Terminal log line
+    const logEntry = document.createElement('div');
+    logEntry.innerHTML = '<span class="text-cyan-500">$</span> ' + line.replace(/</g, '&lt;');
+    liveLog.appendChild(logEntry);
+    liveLog.scrollTop = liveLog.scrollHeight;
+
+    // Progress stage line (replace placeholder or append)
+    const placeholder = linesBox.querySelector('.text-slate-400');
+    if (line.startsWith('Résolution DNS')) {
+        // Clean placeholders once the first real stage arrives
+        linesBox.innerHTML = '';
+    } else {
+        placeholder?.remove();
+    }
+    const stage = document.createElement('div');
+    stage.className = 'p-3 bg-slate-950/60 border border-slate-800/80 rounded flex items-center gap-3';
+    const isDone = line.includes('OK') || line.includes('notées') || line.includes('trouvée') || line.includes('termine') || line.includes('constat') || line.includes('/100');
+    if (isDone) {
+        stage.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-400"></i><span class="text-emerald-300">' + line + '</span>';
+    } else {
+        stage.innerHTML = '<i class="fa-solid fa-rotate text-cyan-400 animate-spin"></i><span class="text-slate-200">' + line + '</span>';
+    }
+    linesBox.appendChild(stage);
+}
+
+const es = new EventSource(`/scan/progress/${jobId}/stream`);
+
+es.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    addLine(data.line);
+};
+
+es.addEventListener('done', (event) => {
+    const data = JSON.parse(event.data);
+    es.close();
+    const badge = document.getElementById('status-badge');
+    badge.className = 'flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-widest text-emerald-400 border border-emerald-500/30 bg-emerald-950/30 rounded px-3 py-2';
+    badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Complete';
+    addLine('Redirecting to full intelligence report...');
+    setTimeout(() => { window.location.href = data.url; }, 800);
+});
+
+es.addEventListener('error', (event) => {
+    es.close();
+    let msg = 'The scan pipeline encountered an unexpected error.';
+    if (event.data) {
+        try {
+            const parsed = JSON.parse(event.data);
+            msg = parsed.error || msg;
+        } catch (e) { /* keep default message */ }
+    }
+    const badge = document.getElementById('status-badge');
+    badge.className = 'flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-widest text-red-400 border border-red-500/30 bg-red-950/30 rounded px-3 py-2';
+    badge.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Failed';
+    addLine('ERROR: ' + msg);
+    const logEntry = document.createElement('div');
+    logEntry.className = 'text-red-400';
+    logEntry.textContent = 'ERROR: ' + msg;
+    liveLog.appendChild(logEntry);
+});
+</script>
+{% endblock %}

@@ -13,3 +13,4 @@ class Config:
     # API keys come from the .env file (never commit real keys to source code)
     SHODAN_API_KEY = os.environ.get('SHODAN_API_KEY', '')
     VIRUSTOTAL_API_KEY = os.environ.get('VIRUSTOTAL_API_KEY', '')
+    NVD_API_KEY = os.environ.get('NVD_API_KEY', '')

@@ -23,7 +23,7 @@ class TestThreatCorrelator(unittest.TestCase):
 
         # Check that RDP finding was generated
         titles = [f["title"] for f in findings]
-        self.assertIn("RDP Exposé Publiquement", titles)
+        self.assertIn("RDP Publicly Exposed", titles)
 
     def test_high_port_volume_score(self):
         """Verify that an IP with > 20 ports triggers a CRITICAL finding and score boost."""
@@ -39,7 +39,7 @@ class TestThreatCorrelator(unittest.TestCase):
         score_data = calculate_score(findings)
 
         self.assertGreaterEqual(score_data["score"], 30.0)
-        self.assertIn("Surface d'Attaque Critiquement Étendue", [f["title"] for f in findings])
+        self.assertIn("Critically Extended Attack Surface", [f["title"] for f in findings])
 
     def test_clean_target_score(self):
         """Verify that a clean target receives a LOW risk rating."""
@@ -70,7 +70,7 @@ class TestThreatCorrelator(unittest.TestCase):
         self.assertGreaterEqual(profile["exposure_index"], 50.0)
         self.assertEqual(profile["exposure_band"], "HIGH")
         self.assertLess(profile["threat_index"], 50.0)
-        self.assertIn("Asset Exposé", profile["profile"])
+        self.assertIn("Exposed", profile["profile"])
 
     def test_malicious_reputation_profile_is_threat(self):
         """A malicious reputation should push the threat axis, not the exposure axis."""
@@ -87,7 +87,7 @@ class TestThreatCorrelator(unittest.TestCase):
         self.assertGreaterEqual(profile["threat_index"], 50.0)
         self.assertEqual(profile["threat_band"], "CRITICAL")
         self.assertLess(profile["exposure_index"], 50.0)
-        self.assertIn("Acteur de Menace", profile["profile"])
+        self.assertIn("Threat Actor", profile["profile"])
 
     def test_findings_are_categorized(self):
         """Every finding must carry an exposure or threat category."""
