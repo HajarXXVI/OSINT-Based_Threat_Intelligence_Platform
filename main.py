@@ -305,6 +305,7 @@ def scan_target():
                     vt_data=json.dumps(scan_data['virustotal']),
                     whois_data=json.dumps(scan_data['whois_data']),
                     ssl_data=json.dumps(scan_data['ssl_data']),
+                    dns_data=json.dumps(scan_data.get('dns_data', {})),
                     findings_data=json.dumps(scan_data.get('findings', [])),
                     risk_score=scan_data['risk_score'],
                     risk_level=scan_data['risk_level'],
@@ -386,6 +387,7 @@ def view_scan_details(scan_id):
     shodan_dict = safe_json(scan.shodan_data)
     geo_dict = safe_json(scan.geolocation_data)
     vt_dict = safe_json(scan.vt_data)
+    dns_dict = safe_json(scan.dns_data)
     findings_list = safe_json(scan.findings_data)
     if not isinstance(findings_list, list):
         findings_list = []
@@ -439,6 +441,7 @@ def view_scan_details(scan_id):
         shodan=shodan_dict,
         geolocation=geo_dict,
         virustotal=vt_dict,
+        dns=dns_dict,
         findings=findings_list,
         exposure_color=bar_exposure_color,
         threat_color=bar_threat_color,
@@ -462,6 +465,7 @@ if __name__ == '__main__':
             'findings_data': 'ALTER TABLE scan_result ADD COLUMN findings_data TEXT',
             'whois_data': 'ALTER TABLE scan_result ADD COLUMN whois_data TEXT',
             'ssl_data': 'ALTER TABLE scan_result ADD COLUMN ssl_data TEXT',
+            'dns_data': 'ALTER TABLE scan_result ADD COLUMN dns_data TEXT',
             'risk_color': 'ALTER TABLE scan_result ADD COLUMN risk_color VARCHAR(20)',
             'exposure_index': 'ALTER TABLE scan_result ADD COLUMN exposure_index FLOAT DEFAULT 0.0',
             'threat_index': 'ALTER TABLE scan_result ADD COLUMN threat_index FLOAT DEFAULT 0.0',

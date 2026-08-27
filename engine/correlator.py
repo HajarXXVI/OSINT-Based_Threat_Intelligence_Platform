@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from apis.shodan_api import get_shodan_host_info
 from apis.nvd_api import get_cve_by_id
 from apis.metadata_api import get_whois_info, get_ssl_certificate_info
+from apis.dns_api import get_dns_records
 from engine.scorer import calculate_score, calculate_profiles
 
 SEVERITY_ORDER = {"UNKNOWN": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
@@ -268,10 +269,13 @@ def analyze_target(target, shodan_api_key=None, vt_api_key=None, nvd_api_key=Non
     profiles = calculate_profiles(findings)
     report(f"Score: {risk_assessment['score']}/100 ({risk_assessment['level']})")
 
-    # 6. Metadata summaries (WHOIS & SSL)
+    # 6. Metadata summaries (WHOIS, TLS & DNS)
     report("Domain metadata (RDAP) and TLS certificate...")
     whois_summary = get_whois_info(target)
     ssl_summary = get_ssl_certificate_info(target)
+
+    report("DNS records & email-spoofing protection...")
+    dns_summary = get_dns_records(target)
 
     report("Analysis complete")
     return {
@@ -280,6 +284,7 @@ def analyze_target(target, shodan_api_key=None, vt_api_key=None, nvd_api_key=Non
         "virustotal": vt_data,
         "whois_data": whois_summary,
         "ssl_data": ssl_summary,
+        "dns_data": dns_summary,
         "findings": findings,
         "risk_score": risk_assessment["score"],
         "risk_level": risk_assessment["level"],

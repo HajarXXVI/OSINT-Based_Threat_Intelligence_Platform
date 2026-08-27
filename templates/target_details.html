@@ -232,6 +232,76 @@
             <p class="text-slate-300"><strong class="text-slate-400">Certificate Issuer:</strong> {{ scan.ssl_data | parse_json_field('issuer', scan.ssl_data) }}</p>
             <p class="text-slate-300"><strong class="text-slate-400">Expires In:</strong> {{ scan.ssl_data | parse_json_field('expires_in_days', scan.ssl_data) }} days</p>
         </div>
+
+        <!-- DNS / Email-Spoofing Protection Widget -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl space-y-3 font-mono text-xs">
+            <h3 class="font-cyber font-bold text-sm tracking-wider text-amber-400 uppercase border-b border-slate-800 pb-2">
+                <i class="fa-solid fa-envelope-circle-check mr-2 text-fuchsia-500"></i> DNS & Email Spoofing Protection
+            </h3>
+
+            {% set spf = dns.spf if dns.spf else 'NOT SET' %}
+            {% set dmarc = dns.dmarc if dns.dmarc else 'NOT SET' %}
+            {% set dkim = dns.dkim if dns.dkim else 'NOT DETECTED' %}
+            {% set spoof_protected = dns.spoofing_protected if dns.spoofing_protected is not none else False %}
+
+            <p class="text-slate-300">
+                <strong class="text-slate-400">SPF:</strong>
+                {% if spf != 'NOT SET' %}
+                    <span class="text-emerald-400 font-bold">Configured</span>
+                {% else %}
+                    <span class="text-red-400 font-bold">Missing</span>
+                    <span class="text-slate-500">(anyone can send mail as this domain)</span>
+                {% endif %}
+            </p>
+            <p class="text-slate-300">
+                <strong class="text-slate-400">DKIM:</strong>
+                {% if dkim != 'NOT DETECTED' %}
+                    <span class="text-emerald-400 font-bold">Detected</span>
+                {% else %}
+                    <span class="text-slate-400 font-bold">Not Detected</span>
+                {% endif %}
+            </p>
+            <p class="text-slate-300">
+                <strong class="text-slate-400">DMARC Policy:</strong>
+                {% if dmarc != 'NOT SET' %}
+                    <span class="text-emerald-400 font-bold">Configured</span>
+                {% else %}
+                    <span class="text-red-400 font-bold">Missing</span>
+                {% endif %}
+            </p>
+
+            <div class="mt-2 pt-3 border-t border-slate-800">
+                <h5 class="mb-2 font-bold uppercase tracking-wider">Spoofing Verdict</h5>
+                {% if spoof_protected %}
+                    <div class="bg-emerald-950/40 border border-emerald-900/50 text-emerald-400 rounded p-2 text-center">
+                        <strong>Protected</strong>
+                        <p class="mb-0 text-[10px] text-slate-300">Email from this domain is verifiable (SPF + DMARC/DKIM).</p>
+                    </div>
+                {% else %}
+                    <div class="bg-red-950/40 border border-red-900/50 text-red-400 rounded p-2 text-center">
+                        <strong>Vulnerable to Spoofing</strong>
+                        <p class="mb-0 text-[10px] text-slate-300">Missing SPF &amp; DMARC allows attackers to impersonate this domain in phishing emails.</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="mt-2 pt-3 border-t border-slate-800 space-y-1">
+                <p class="text-slate-300">
+                    <strong class="text-slate-400">Mail Servers (MX):</strong>
+                    <span class="block text-[10px] text-slate-500 break-all">
+                        {% set mx = dns.mx_records if dns.mx_records else [] %}
+                        {% if mx %}{{ mx | join(' · ') }}{% else %}None detected{% endif %}
+                    </span>
+                </p>
+                <p class="text-slate-300">
+                    <strong class="text-slate-400">Name Servers (NS):</strong>
+                    <span class="block text-[10px] text-slate-500 break-all">
+                        {% set ns = dns.ns_servers if dns.ns_servers else [] %}
+                        {% if ns %}{{ ns[:4] | join(' · ') }}{% if ns|length > 4 %} · +{{ ns|length - 4 }} more{% endif %}{% else %}None detected{% endif %}
+                    </span>
+                </p>
+            </div>
+        </div>
     </div>
     {% endif %}
 </div>

@@ -32,6 +32,7 @@ class ScanResult(db.Model):
     vt_data = db.Column(db.Text, nullable=True)
     whois_data = db.Column(db.Text, nullable=True)
     ssl_data = db.Column(db.Text, nullable=True)
+    dns_data = db.Column(db.Text, nullable=True)
     findings_data = db.Column(db.Text, nullable=True)
     risk_score = db.Column(db.Float, default=0.0)
     risk_level = db.Column(db.String(20), default="Low")
