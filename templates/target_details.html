@@ -3,6 +3,7 @@
 {% block title %}ThreatLens // Target Intelligence Report{% endblock %}
 
 {% block content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <div class="space-y-6">
     <!-- Top Header Bar -->
     <div class="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-900/90 border border-slate-800 rounded-lg p-6 shadow-xl gap-4">
@@ -100,6 +101,17 @@
             <p class="text-slate-300"><strong class="text-slate-400">Latitude / Longitude:</strong> {{ scan.geolocation_data | parse_json_field('lat', scan.geolocation_data) }}, {{ scan.geolocation_data | parse_json_field('lon', scan.geolocation_data) }}</p>
             <p class="text-slate-300"><strong class="text-slate-400">ISP:</strong> {{ scan.geolocation_data | parse_json_field('isp', scan.geolocation_data) }}</p>
             <p class="text-slate-300"><strong class="text-slate-400">Organization:</strong> {{ scan.geolocation_data | parse_json_field('org', scan.geolocation_data) }}</p>
+
+            <!-- Geolocation Mini-Map -->
+            <div class="mt-2 pt-3 border-t border-slate-800">
+                {% set map_lat = scan.geolocation_data | parse_json_field('lat', scan.geolocation_data) %}
+                {% set map_lon = scan.geolocation_data | parse_json_field('lon', scan.geolocation_data) %}
+                {% if map_lat != 'N/A' and map_lon != 'N/A' %}
+                    <div id="geo-map" class="w-full h-48 rounded border border-slate-700" data-lat="{{ map_lat }}" data-lon="{{ map_lon }}" data-city="{{ scan.geolocation_data | parse_json_field('city', scan.geolocation_data) }}"></div>
+                {% else %}
+                    <div class="text-center text-slate-500 uppercase tracking-wider py-4">No geolocation coordinates available</div>
+                {% endif %}
+            </div>
         </div>
 
         <!-- Infrastructure Widget -->
@@ -172,7 +184,7 @@
             {% endfor %}
         {% else %}
             <div class="bg-emerald-950/40 border border-emerald-900/50 text-center rounded p-2 text-emerald-400">
-                <strong>Aucun indicateur de risque détecté pour cette cible.</strong>
+                <strong>No risk indicators detected for this target.</strong>
             </div>
         {% endif %}
     </div>
@@ -223,4 +235,29 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const mapEl = document.getElementById('geo-map');
+        if (!mapEl) return; // no coordinates -> nothing to render
+
+        const lat = parseFloat(mapEl.dataset.lat);
+        const lon = parseFloat(mapEl.dataset.lon);
+        const city = mapEl.dataset.city || '';
+        if (isNaN(lat) || isNaN(lon)) return;
+
+        const map = L.map('geo-map').setView([lat, lon], 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        L.marker([lat, lon]).addTo(map)
+            .bindPopup('<b>' + (city || 'Target') + '</b><br>' + lat.toFixed(4) + ', ' + lon.toFixed(4))
+            .openPopup();
+    });
+</script>
 {% endblock %}
