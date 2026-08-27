@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, url_for, request, flash, session, Response
+from flask import Flask, render_template, redirect, url_for, request, flash, session, Response, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
 from sqlalchemy import inspect, text
@@ -355,9 +355,15 @@ def delete_scan(scan_id):
 @app.route('/scan', methods=['POST'])
 @login_required
 def scan_target():
+    # AJAX scans (from the in-page modal) ask for a JSON payload with the job
+    # id; classic form posts keep the old redirect-to-progress-page flow.
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
     target = request.form.get('target')
     validated_target, error = validate_target(target)
     if error:
+        if is_ajax:
+            return jsonify({"error": error, "target": target}), 400
         flash(error, 'danger')
         return redirect(url_for('index'))
 
@@ -418,6 +424,8 @@ def scan_target():
             SCAN_JOBS[job_id]["done"] = True
 
     threading.Thread(target=run_scan, daemon=True).start()
+    if is_ajax:
+        return jsonify({"job_id": job_id, "target": validated_target})
     return redirect(url_for('scan_progress', job_id=job_id))
 
 

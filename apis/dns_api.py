@@ -6,15 +6,23 @@ DNS_GOOGLE = "https://dns.google/resolve"
 TIMEOUT = 6
 
 
-def _query(name, rtype):
-    """Single DNS lookup against the free, key-less Google DNS-over-JSON API."""
+def _lookup(name, rtype, include_authority=False):
+    """
+    Single DNS lookup against the free, key-less Google DNS-over-JSON API.
+    Returns a flat list of records. When include_authority is True and no
+    answer exists, the authoritative SOA record is returned instead (used for
+    NS lookups so that zones exposing only a delegation are still covered).
+    """
     try:
         response = requests.get(DNS_GOOGLE, params={"name": name, "type": rtype},
                                 timeout=TIMEOUT)
         if response.status_code != 200:
             return None
         data = response.json()
-        return data.get("Answer", [])
+        records = list(data.get("Answer", []) or [])
+        if include_authority and not records:
+            records = [r for r in (data.get("Authority", []) or []) if r.get("type") == 6]
+        return records or None
     except Exception as e:
         logging.warning(f"DNS lookup failed for {name} (type {rtype}): {e}")
         return None
@@ -50,23 +58,31 @@ def get_dns_records(target):
 
     result = dict(DNS_DEFAULTS)
 
-    # 1. Authoritative name servers (hosting / DNS infrastructure)
-    ns_records = _query(clean, "NS") or []
-    result["ns_servers"] = [r["data"].rstrip(".") for r in ns_records]
+    # 1. Authoritative name servers (hosting / DNS infrastructure).
+    #    Most zones return NS records directly; zones that only show a
+    #    delegation return the SOA record, whose first field is the primary
+    #    name server.
+    ns_records = _lookup(clean, "NS", include_authority=True) or []
+    ns_servers = []
+    for r in ns_records:
+        data = r["data"].split()[0].rstrip(".")
+        if data and data not in ns_servers:
+            ns_servers.append(data)
+    result["ns_servers"] = ns_servers
 
     # 2. Mail exchange servers (where incoming email is routed)
-    mx_records = _query(clean, "MX") or []
+    mx_records = _lookup(clean, "MX") or []
     mx_records.sort(key=lambda r: r.get("preference", 0))
     result["mx_records"] = [r["data"].rstrip(".") for r in mx_records]
 
     # 3. SPF record — published in the main TXT record, starts with "v=spf1"
-    txt_records = _query(clean, "TXT") or []
+    txt_records = _lookup(clean, "TXT") or []
     spf = next((r["data"] for r in txt_records if "v=spf1" in r.get("data", "")), None)
     if spf:
         result["spf"] = spf
 
     # 4. DMARC policy — always lives at the dedicated "_dmarc." subdomain
-    dmarc_records = _query(f"_dmarc.{clean}", "TXT") or []
+    dmarc_records = _lookup(f"_dmarc.{clean}", "TXT") or []
     dmarc = next((r["data"] for r in dmarc_records if "v=DMARC1" in r.get("data", "")), None)
     if dmarc:
         result["dmarc"] = dmarc
@@ -76,7 +92,7 @@ def get_dns_records(target):
     dkim = None
     for selector in ("google", "default", "selector1", "selector2", "k1", "s1",
                      "smtp", "mail", "dkim", "key1", "mandrill", "x"):
-        dkim_records = _query(f"{selector}._domainkey.{clean}", "TXT")
+        dkim_records = _lookup(f"{selector}._domainkey.{clean}", "TXT")
         if dkim_records:
             dkim = next((r["data"] for r in dkim_records if "v=DKIM1" in r.get("data", "")), None)
             if dkim:
