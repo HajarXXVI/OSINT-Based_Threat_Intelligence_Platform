@@ -269,7 +269,7 @@ def analyze_target(target, shodan_api_key=None, vt_api_key=None, nvd_api_key=Non
     profiles = calculate_profiles(findings)
     report(f"Score: {risk_assessment['score']}/100 ({risk_assessment['level']})")
 
-    # 6. Metadata summaries (WHOIS, TLS & DNS)
+    # 7. Metadata summaries (WHOIS, TLS & DNS)
     report("Domain metadata (RDAP) and TLS certificate...")
     whois_summary = get_whois_info(target)
     ssl_summary = get_ssl_certificate_info(target)

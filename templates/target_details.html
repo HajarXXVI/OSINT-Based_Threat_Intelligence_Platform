@@ -261,7 +261,7 @@
         </div>
 
         <!-- DNS / Email-Spoofing Protection Widget -->
-        <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl space-y-3 font-mono text-xs">
+        <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl space-y-3 font-mono text-xs md:col-span-2">
             <h3 class="font-cyber font-bold text-sm tracking-wider text-amber-400 uppercase border-b border-slate-800 pb-2">
                 <i class="fa-solid fa-envelope-circle-check mr-2 text-fuchsia-500"></i> DNS & Email Spoofing Protection
             </h3>
@@ -335,6 +335,21 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script>
+    (function () {
+        // Guarantee that pressing the browser Back from a report returns to the
+        // page this scan was launched from (usually Home), regardless of how many
+        // reports were viewed in between. We push a placeholder state; when the
+        // Back button pops it, we send the user home instead of to a previous
+        // scan report.
+        if (window.history && history.pushState) {
+            history.pushState({ tl_sentinel: true }, '', location.href);
+            window.addEventListener('popstate', function () {
+                window.location.href = '/';
+            });
+        }
+    })();
+</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>

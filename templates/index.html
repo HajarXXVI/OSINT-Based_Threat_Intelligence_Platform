@@ -248,9 +248,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 es.close();
                 setBadge('done');
                 addLogLine('Analysis complete. Loading report...', '#34d399');
-                // window.location.replace() swaps the CURRENT history entry for the
-                // report, so the browser Back button never returns to this page.
-                setTimeout(() => { window.location.replace(done.url); }, 700);
+                // Navigate normally so Home stays in the browser history and
+                // the Back button returns the user to the page they were on
+                // (Home) rather than skipping it. The in-page modal already
+                // leaves no loading-page entry behind.
+                setTimeout(() => { window.location.href = done.url; }, 700);
             });
             es.addEventListener('error', (event) => {
                 es.close();
