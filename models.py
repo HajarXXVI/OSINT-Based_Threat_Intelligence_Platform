@@ -10,7 +10,6 @@ class User(UserMixin, db.Model):
     password = db.Column(db.String(120), nullable=False)
     role = db.Column(db.String(20), default='user')
     virustotal_key = db.Column(db.String(120), nullable=True)
-    abuseipdb_key = db.Column(db.String(120), nullable=True)
     shodan_key = db.Column(db.String(120), nullable=True)
     theme = db.Column(db.String(20), default='cyan')
     alert_threshold = db.Column(db.String(20), default='HIGH')

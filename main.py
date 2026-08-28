@@ -5,6 +5,7 @@ from sqlalchemy import inspect, text
 from config import Config
 from models import db, User, ScanResult, AuditLog
 from engine.correlator import analyze_target
+from engine.pdf_report import generate_pdf_report
 import json
 import socket
 import threading
@@ -200,7 +201,6 @@ def settings_security():
 @login_required
 def settings_intel():
     current_user.virustotal_key = request.form.get('virustotal_key', '').strip()
-    current_user.abuseipdb_key = request.form.get('abuseipdb_key', '').strip()
     current_user.shodan_key = request.form.get('shodan_key', '').strip()
     db.session.commit()
     flash('Threat intelligence keys saved successfully.', 'success')
@@ -646,6 +646,128 @@ def view_scan_details(scan_id):
     )
 
 
+@app.route('/scan/<int:scan_id>/pdf')
+@login_required
+def download_scan_pdf(scan_id):
+    """Generate and download a professional PDF report for a scan."""
+    scan = db.session.get(ScanResult, scan_id)
+    if not scan or scan.user_id != current_user.id:
+        flash('Scan report not found or access denied.', 'danger')
+        return redirect(url_for('index'))
+
+    # Parse stored JSON fields safely
+    def safe_json(data):
+        if not data:
+            return {}
+        try:
+            return json.loads(data) if isinstance(data, str) else data
+        except Exception:
+            return {}
+
+    shodan_dict = safe_json(scan.shodan_data)
+    geo_dict = safe_json(scan.geolocation_data)
+    vt_dict = safe_json(scan.vt_data)
+    dns_dict = safe_json(scan.dns_data)
+    findings_list = safe_json(scan.findings_data)
+    if not isinstance(findings_list, list):
+        findings_list = []
+
+    # Recompute chart data (same logic as view_scan_details)
+    sev_order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+    sev_counts = {s: 0 for s in sev_order}
+    for f in findings_list:
+        sev = str(f.get('severity', 'LOW')).upper()
+        sev_counts[sev] = sev_counts.get(sev, 0) + 1
+    chart_findings_by_severity = {
+        "labels": sev_order,
+        "counts": [sev_counts[s] for s in sev_order],
+        "colors": ['#dc3545', '#fd7e14', '#ffc107', '#28a745'],
+    }
+
+    cat_counts = {'EXPOSURE': 0, 'THREAT': 0}
+    for f in findings_list:
+        cat = str(f.get('category', 'exposure')).upper()
+        cat_counts['THREAT' if cat == 'THREAT' else 'EXPOSURE'] += 1
+    chart_findings_by_category = {
+        "labels": ['EXPOSURE', 'THREAT'],
+        "counts": [cat_counts['EXPOSURE'], cat_counts['THREAT']],
+        "colors": ['#06b6d4', '#d946ef'],
+    }
+
+    cve_counts = {s: 0 for s in sev_order}
+    for v in (shodan_dict.get('enriched_vulns') or []):
+        sev = str(v.get('severity', 'UNKNOWN')).upper()
+        if sev not in cve_counts:
+            cve_counts[sev] = 0
+        cve_counts[sev] += 1
+    cve_severities = list(cve_counts.keys())
+    cve_counts_ordered = cve_counts
+    chart_cves_by_severity = {
+        "labels": cve_severities,
+        "counts": [cve_counts_ordered[s] for s in cve_severities],
+        "colors": ['#dc3545', '#fd7e14', '#ffc107', '#28a745', '#64748b'],
+    }
+
+    # Band colors
+    profile_colors = {
+        'LOW': '#28a745',
+        'MEDIUM': '#ffc107',
+        'HIGH': '#fd7e14',
+        'CRITICAL': '#dc3545'
+    }
+    exposure_color = profile_colors.get(getattr(scan, 'exposure_band', None) or 'LOW', '#38bdf8')
+    threat_color = profile_colors.get(getattr(scan, 'threat_band', None) or 'LOW', '#38bdf8')
+
+    def _is_ip_address(target):
+        clean = str(target or '').replace('https://', '').replace('http://', '').split('/')[0]
+        return '.' in clean and clean.replace('.', '').isdigit()
+
+    target_is_ip = _is_ip_address(scan.target)
+
+    no_ports = not (shodan_dict.get('ports') or [])
+    no_cves = not (shodan_dict.get('enriched_vulns') or [])
+    show_osint_explainer = bool(no_ports and no_cves)
+
+    if show_osint_explainer:
+        score_color = '#94a3b8'
+        score_level = 'NO SIGNAL'
+        verdict = 'No Passive Signals Detected'
+        bar_exposure_color = '#94a3b8'
+        bar_threat_color = '#94a3b8'
+    else:
+        score_color = scan.risk_color or '#38bdf8'
+        score_level = scan.risk_level or 'LOW'
+        verdict = scan.profile or 'Low Concern — Apparently Sound Resource'
+        bar_exposure_color = exposure_color
+        bar_threat_color = threat_color
+
+    # Generate PDF
+    pdf_bytes = generate_pdf_report(
+        scan=scan,
+        shodan_dict=shodan_dict,
+        geo_dict=geo_dict,
+        vt_dict=vt_dict,
+        dns_dict=dns_dict,
+        findings_list=findings_list,
+        exposure_color=exposure_color,
+        threat_color=threat_color,
+        target_is_ip=target_is_ip,
+        display_score_level=score_level,
+        display_score_color=score_color,
+        display_verdict=verdict,
+        chart_findings_by_severity=chart_findings_by_severity,
+        chart_findings_by_category=chart_findings_by_category,
+        chart_cves_by_severity=chart_cves_by_severity,
+    )
+
+    # Return PDF response
+    from flask import make_response
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename=threatlens-report-{scan.target}-{scan.id}.pdf'
+    return response
+
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
@@ -689,6 +811,26 @@ if __name__ == '__main__':
             if column not in columns:
                 db.session.execute(text(ddl))
                 db.session.commit()
+
+        # Migrate French profile verdicts to English
+        french_to_english = {
+            'Faible Pr�occupation': 'Low Concern',
+            'Faible Pr\\u00e9occupation': 'Low Concern',
+            'Faible Pr\u00e9occupation': 'Low Concern',
+            'Faible Pr\u00e9occupation \u2014 Ressource A Priori Saine': 'Low Concern — Apparently Sound Resource',
+            'Faible Pr\u00e9occupation — Ressource A Priori Saine': 'Low Concern — Apparently Sound Resource',
+            'Cible Expos\u00e9e ET Acteur de Menace Potentiel': 'Exposed AND Potential Threat Actor',
+            'Cible Expos�e ET Acteur de Menace Potentiel': 'Exposed AND Potential Threat Actor',
+            'Cible Expos\u00e9e ET Acteur de Menace Potentiel': 'Exposed AND Potential Threat Actor',
+            'Pr\u00e9occupation Mod\u00e9r\u00e9e': 'Moderate Concern',
+            'Pr\u00e9occupation Mod\u00e9r\u00e9e': 'Moderate Concern',
+            'Moderate Concern': 'Moderate Concern',
+        }
+        for fr, en in french_to_english.items():
+            updated = ScanResult.query.filter(ScanResult.profile == fr).update({ScanResult.profile: en})
+            if updated:
+                db.session.commit()
+                print(f'Migrated {updated} profile(s): "{fr}" -> "{en}"')
 
         admin_user = User.query.filter_by(username='admin').first()
         if not admin_user:

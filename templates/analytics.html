@@ -291,10 +291,16 @@ document.addEventListener('DOMContentLoaded', function () {
     {% if profile_distribution.labels %}
     const prof = {{ profile_distribution | tojson }};
     const profColors = ['#06b6d4', '#d946ef', '#f59e0b', '#10b981', '#64748b', '#38bdf8', '#f472b6', '#a78bfa'];
+    
+    // Truncate long labels for display
+    function truncateLabel(label, maxLen = 32) {
+        return label.length > maxLen ? label.substring(0, maxLen) + '…' : label;
+    }
+    
     new Chart(document.getElementById('profileChart'), {
         type: 'bar',
         data: {
-            labels: prof.labels,
+            labels: prof.labels.map(l => truncateLabel(l)),
             datasets: [{
                 label: 'Scans', data: prof.counts,
                 backgroundColor: prof.labels.map((_, i) => profColors[i % profColors.length] + 'cc'),
@@ -305,10 +311,24 @@ document.addEventListener('DOMContentLoaded', function () {
         options: {
             indexAxis: 'y',
             responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (ctx) => prof.labels[ctx[0].dataIndex], // Show full label in tooltip
+                        label: (ctx) => ' Scans: ' + ctx.parsed.x
+                    }
+                }
+            },
             scales: {
                 x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } },
-                y: { grid: { color: gridColor } }
+                y: { 
+                    grid: { color: gridColor },
+                    ticks: {
+                        callback: (value, index) => truncateLabel(prof.labels[index]),
+                        font: { family: "'Share Tech Mono', monospace", size: 10 }
+                    }
+                }
             }
         }
     });

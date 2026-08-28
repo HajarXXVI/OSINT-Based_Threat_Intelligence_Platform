@@ -19,9 +19,6 @@
         <button type="button" onclick="switchTab('security')" id="tab-security" class="tab-link pb-3 text-slate-400 hover:text-cyan-400 transition">
             <i class="fa-solid fa-shield text-cyan-400 mr-1.5"></i> Security & Password
         </button>
-        <button type="button" onclick="switchTab('intel')" id="tab-intel" class="tab-link pb-3 text-slate-400 hover:text-cyan-400 transition">
-            <i class="fa-solid fa-key text-fuchsia-400 mr-1.5"></i> Threat Intel Keys
-        </button>
         <button type="button" onclick="switchTab('visuals')" id="tab-visuals" class="tab-link pb-3 text-cyan-400 border-b-2 border-cyan-400 font-bold transition">
             <i class="fa-solid fa-sliders text-cyan-400 mr-1.5"></i> UI & Visuals
         </button>
@@ -50,31 +47,7 @@
         </form>
     </div>
 
-    <!-- TAB 2: THREAT INTEL KEYS -->
-    <div id="content-intel" class="tab-content hidden bg-slate-900/80 border border-slate-800 rounded-lg p-6 shadow-2xl backdrop-blur-md space-y-6">
-        <h3 class="font-cyber font-bold text-sm tracking-wider text-slate-200 uppercase border-b border-slate-800 pb-3">
-            Threat Intelligence Access Keys
-        </h3>
-        <form method="POST" action="/settings/intel" class="space-y-4 max-w-xl">
-            <div>
-                <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Reputation Analysis Key</label>
-                <input type="text" name="virustotal_key" value="{{ current_user.virustotal_key or '' }}" class="w-full bg-slate-950 border border-slate-800 rounded px-4 py-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none font-mono text-xs">
-            </div>
-            <div>
-                <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Abuse Intelligence Key</label>
-                <input type="text" name="abuseipdb_key" value="{{ current_user.abuseipdb_key or '' }}" class="w-full bg-slate-950 border border-slate-800 rounded px-4 py-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none font-mono text-xs">
-            </div>
-            <div>
-                <label class="block text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Network Footprint Key</label>
-                <input type="text" name="shodan_key" value="{{ current_user.shodan_key or '' }}" class="w-full bg-slate-950 border border-slate-800 rounded px-4 py-2.5 text-slate-200 focus:border-cyan-500 focus:outline-none font-mono text-xs">
-            </div>
-            <button type="submit" class="px-6 py-2.5 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/40 rounded font-bold uppercase tracking-wider transition text-xs">
-                Save Access Keys
-            </button>
-        </form>
-    </div>
-
-    <!-- TAB 3: UI & VISUALS (Active by default) -->
+    <!-- TAB 2: UI & VISUALS (Active by default) -->
     <div id="content-visuals" class="tab-content bg-slate-900/80 border border-slate-800 rounded-lg p-6 shadow-2xl backdrop-blur-md space-y-6">
         <h3 class="font-cyber font-bold text-sm tracking-wider text-slate-200 uppercase border-b border-slate-800 pb-3">
             Display & Theme Preferences
