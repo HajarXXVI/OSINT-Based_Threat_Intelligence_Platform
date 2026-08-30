@@ -2,6 +2,7 @@
 import socket
 import requests
 import logging
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from apis.shodan_api import get_shodan_host_info
 from apis.nvd_api import get_cve_by_id
@@ -37,6 +38,9 @@ class ThreatCorrelator:
         vt_stats = vt.get("stats", vt) if isinstance(vt, dict) else {}
         self.vt_malicious = int(vt_stats.get("malicious", 0) or 0)
         self.vt_suspicious = int(vt_stats.get("suspicious", 0) or 0)
+        self.whois_data = scan_results.get("whois", {}) or {}
+        self.ssl_data = scan_results.get("ssl", {}) or {}
+        self.dns_data = scan_results.get("dns", {}) or {}
         self.findings = []
 
     def correlate(self):
@@ -44,6 +48,9 @@ class ThreatCorrelator:
         self._check_cves()
         self._check_reputation()
         self._check_cross_correlations()
+        self._check_dns_posture()
+        self._check_domain_age()
+        self._check_tls_posture()
         return self.findings
 
     def _add_finding(self, title, severity, description, recommendation, category="exposure"):
@@ -155,6 +162,43 @@ class ThreatCorrelator:
                 "Enforce strong authentication and log connection attempts.",
                 category="threat")
 
+    def _check_dns_posture(self):
+        if self.dns_data.get("mx_records") and not self.dns_data.get("spoofing_protected"):
+            self._add_finding(
+                "Email Spoofing Not Protected", "MEDIUM",
+                "The domain receives mail (MX records exist) but publishes no valid anti-spoofing "
+                "policy (SPF combined with DMARC or DKIM), so senders can forge emails in its name.",
+                "Publish an SPF record and a DMARC policy, and sign outgoing mail with DKIM.")
+
+    def _check_domain_age(self):
+        creation = self.whois_data.get("creation_date")
+        if not creation or creation == "N/A":
+            return
+        try:
+            created = datetime.strptime(creation, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            return
+        if (datetime.now(timezone.utc) - created).days < 30:
+            self._add_finding(
+                "Newly Registered Domain", "HIGH",
+                f"The domain was registered less than 30 days ago ({creation}), a common pattern "
+                "for phishing and typosquatting infrastructure.",
+                "Treat the domain as suspicious and verify its owner before trusting it.")
+
+    def _check_tls_posture(self):
+        if not self.ssl_data.get("has_ssl"):
+            return
+        try:
+            days_left = int(self.ssl_data.get("expires_in_days"))
+        except (TypeError, ValueError):
+            return
+        if days_left < 0:
+            self._add_finding(
+                "Expired TLS Certificate", "MEDIUM",
+                "The TLS certificate presented on port 443 has expired, exposing users to browser "
+                "warnings and man-in-the-middle risk.",
+                "Renew the certificate immediately and re-check any services still using the old one.")
+
 
 def _resolve_ip(target):
     try:
@@ -255,12 +299,23 @@ def analyze_target(target, shodan_api_key=None, vt_api_key=None, nvd_api_key=Non
     vt_data = _get_virustotal(ip_address, vt_api_key)
     report(f"Reputation: {vt_data.get('malicious', 0)} malicious engine(s)")
 
-    # 5. Correlation + scoring
+    # 5. Metadata posture (WHOIS, TLS & DNS), collected before correlation
+    report("Domain metadata (RDAP) and TLS certificate...")
+    whois_summary = get_whois_info(target)
+    ssl_summary = get_ssl_certificate_info(target)
+
+    report("DNS records & email-spoofing protection...")
+    dns_summary = get_dns_records(target)
+
+    # 6. Correlation + scoring
     report("Correlating findings...")
     findings = ThreatCorrelator({
         "shodan": shodan_data,
         "virustotal": vt_data,
-        "cves": shodan_data.get("enriched_vulns", [])
+        "cves": shodan_data.get("enriched_vulns", []),
+        "whois": whois_summary,
+        "ssl": ssl_summary,
+        "dns": dns_summary
     }).correlate()
     report(f"{len(findings)} finding(s) generated")
 
@@ -268,14 +323,6 @@ def analyze_target(target, shodan_api_key=None, vt_api_key=None, nvd_api_key=Non
     risk_assessment = calculate_score(findings)
     profiles = calculate_profiles(findings)
     report(f"Score: {risk_assessment['score']}/100 ({risk_assessment['level']})")
-
-    # 7. Metadata summaries (WHOIS, TLS & DNS)
-    report("Domain metadata (RDAP) and TLS certificate...")
-    whois_summary = get_whois_info(target)
-    ssl_summary = get_ssl_certificate_info(target)
-
-    report("DNS records & email-spoofing protection...")
-    dns_summary = get_dns_records(target)
 
     report("Analysis complete")
     return {

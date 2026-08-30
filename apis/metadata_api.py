@@ -63,17 +63,28 @@ def get_whois_info(target):
     (HTTPS + JSON, free, no API key). rdap.org redirects to the correct
     registry server for the domain's TLD. Falls back to N/A on any
     failure so the scan pipeline never crashes.
+
+    RDAP only serves the *registered* domain (e.g. "github.com"), never an
+    arbitrary subdomain. So for subdomains we walk the hostname from full
+    down to the registrable suffix and stop at the first successful reply:
+    scanning "smtp.github.com" therefore reports github.com's registrar.
     """
     clean_target = target.replace("https://", "").replace("http://", "").split("/")[0]
     if not _looks_like_domain(clean_target):
         return dict(WHOIS_DEFAULTS)
 
-    try:
-        response = requests.get(f"https://rdap.org/domain/{clean_target}", timeout=5)
-        if response.status_code == 200:
-            return _parse_rdap(response.json())
-    except Exception as e:
-        logging.warning(f"RDAP lookup failed for {clean_target}: {e}")
+    labels = clean_target.split(".")
+    candidates = [clean_target] + [
+        ".".join(labels[i:]) for i in range(1, len(labels) - 1)
+    ]
+
+    for candidate in candidates:
+        try:
+            response = requests.get(f"https://rdap.org/domain/{candidate}", timeout=5)
+            if response.status_code == 200:
+                return _parse_rdap(response.json())
+        except Exception as e:
+            logging.warning(f"RDAP lookup failed for {candidate}: {e}")
 
     return dict(WHOIS_DEFAULTS)
 

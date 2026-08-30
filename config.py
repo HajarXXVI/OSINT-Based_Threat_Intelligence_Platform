@@ -14,3 +14,4 @@ class Config:
     SHODAN_API_KEY = os.environ.get('SHODAN_API_KEY', '')
     VIRUSTOTAL_API_KEY = os.environ.get('VIRUSTOTAL_API_KEY', '')
     NVD_API_KEY = os.environ.get('NVD_API_KEY', '')
+    CERTSPOTTER_API_KEY = os.environ.get('CERTSPOTTER_API_KEY', '')

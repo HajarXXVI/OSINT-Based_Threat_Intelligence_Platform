@@ -198,6 +198,55 @@
         {% endif %}
     </div>
 
+    {% if not target_is_ip %}
+    <!-- Subdomain Discovery (public certificate transparency logs) -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <h3 class="font-cyber font-bold text-sm tracking-wider text-amber-400 uppercase">
+                <i class="fa-solid fa-sitemap mr-2 text-fuchsia-500"></i> Subdomain Discovery
+            </h3>
+            <span class="text-[10px] font-mono uppercase tracking-widest rounded px-2 py-0.5 {% if subdomains.cached %}bg-slate-800 text-slate-300{% else %}bg-cyan-950 text-cyan-400{% endif %}">
+                {{ 'cached' if subdomains.cached else 'live' }}
+            </span>
+        </div>
+        {% if subdomains.error %}
+            <p class="font-mono text-xs text-slate-400">
+                <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-1"></i>
+                Certificate Transparency lookup unavailable: <strong class="text-slate-200">{{ subdomains.error }}</strong>
+                — will retry on the next scan of this domain.
+            </p>
+        {% elif subdomains.subdomains %}
+            <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+                <i class="fa-solid fa-circle-info text-cyan-400 mr-1"></i>
+                Found {{ subdomains.total }} subdomain(s) in public certificate transparency logs, {{ subdomains.alive }} resolve to an IP.
+            </p>
+            <ul class="space-y-1.5 font-mono text-xs max-h-72 overflow-y-auto pr-1 scroll-smooth">
+                {% for s in subdomains.subdomains %}
+                <li class="flex items-center justify-between gap-2 p-2 bg-slate-950/60 border border-slate-800/80 rounded">
+                    <span class="flex items-center gap-2 text-slate-300 truncate">
+                        {% if s.alive %}
+                        <i class="fa-solid fa-circle text-[8px] text-emerald-400"></i>
+                        {% else %}
+                        <i class="fa-solid fa-circle text-[8px] text-slate-600"></i>
+                        {% endif %}
+                        <span class="truncate">{{ s.name }}</span>
+                    </span>
+                    <button type="button" onclick='startScan("{{ s.name }}")'
+                            class="shrink-0 px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-cyber font-black uppercase text-[10px] tracking-widest rounded border border-cyan-500/30 transition">
+                        <i class="fa-solid fa-radar mr-1"></i> Scan
+                    </button>
+                </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="font-mono text-xs text-slate-400">
+                <i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i>
+                No subdomains found for this domain in public certificate transparency logs.
+            </p>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Findings Analytics: per-scan charts derived from the report data -->
     <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-5 shadow-xl">
         <h3 class="font-cyber font-bold text-sm tracking-wider text-cyan-400 uppercase border-b border-slate-800 pb-2 mb-3">
@@ -335,9 +384,12 @@
     </div>
     {% endif %}
 </div>
+
+{% include '_scan_modal.html' %}
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='scan_modal.js') }}"></script>
 <script>
     (function () {
         // Guarantee that pressing the browser Back from a report returns to the

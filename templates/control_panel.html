@@ -106,11 +106,17 @@
                             </span>
                         </td>
                         <td class="px-6 py-4 text-right">
-                            <form method="POST" action="/delete-user/{{ user.id }}" class="inline" onsubmit="return confirm('Delete user?');">
-                                <button type="submit" class="text-red-400 hover:text-red-300 transition">
-                                    <i class="fa-solid fa-trash-can"></i>
-                                </button>
-                            </form>
+                            {% if user.id == current_user.id %}
+                                <span class="px-2 py-1 rounded bg-cyan-950 border-cyan-500/30 text-cyan-400 border text-[10px] uppercase font-bold">You</span>
+                            {% elif user.id == last_admin_id %}
+                                <span class="px-2 py-1 rounded bg-slate-800 text-slate-400 border text-[10px] uppercase font-bold" title="The last admin account cannot be deleted">Protected</span>
+                            {% else %}
+                                <form method="POST" action="/delete-user/{{ user.id }}" class="inline" onsubmit="return confirm('Delete user?');">
+                                    <button type="submit" class="text-red-400 hover:text-red-300 transition">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </form>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}

@@ -33,6 +33,8 @@ class ScanResult(db.Model):
     ssl_data = db.Column(db.Text, nullable=True)
     dns_data = db.Column(db.Text, nullable=True)
     findings_data = db.Column(db.Text, nullable=True)
+    # crt.sh subdomain discovery result (JSON: subdomains, alive count, cached flag, error)
+    subdomains_data = db.Column(db.Text, nullable=True)
     risk_score = db.Column(db.Float, default=0.0)
     risk_level = db.Column(db.String(20), default="Low")
     risk_color = db.Column(db.String(20), nullable=True)
@@ -65,3 +67,17 @@ class AuditLog(db.Model):
 
     def __repr__(self):
         return f"<AuditLog {self.username} - {self.action} - {self.target}>"
+
+
+class SubdomainCache(db.Model):
+    """
+    TTL cache for crt.sh subdomain discovery results, keyed by domain, so a
+    slow or rate-limited Certificate Transparency lookup is only paid once per
+    cache window instead of on every scan of the same domain.
+    """
+    domain = db.Column(db.String(100), primary_key=True)
+    data = db.Column(db.Text, nullable=True)
+    fetched_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<SubdomainCache {self.domain}>"

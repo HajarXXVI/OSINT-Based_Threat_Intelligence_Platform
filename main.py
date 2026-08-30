@@ -6,6 +6,7 @@ from config import Config
 from models import db, User, ScanResult, AuditLog
 from engine.correlator import analyze_target
 from engine.pdf_report import generate_pdf_report
+from apis.crt_api import discover_subdomains_cached
 import json
 import socket
 import threading
@@ -95,7 +96,14 @@ def validate_target(target):
         socket.gethostbyname(clean)
         return clean, None
     except Exception:
-        return None, f'Domain "{clean}" could not be resolved. Check the spelling or try an IP address.'
+        return None, (f'DNS lookup failed for "{clean}": no IP address is currently '
+                      f'registered for this domain (it may be unregistered, removed, '
+                      f'or temporarily unavailable). Check the spelling or try an IP address instead.')
+
+
+def _is_ip_literal(target):
+    clean = str(target or '').replace('https://', '').replace('http://', '').split('/')[0]
+    return '.' in clean and clean.replace('.', '').isdigit()
 
 
 # --- Routes ---
@@ -223,7 +231,11 @@ def control_panel():
         return redirect(url_for('index'))
     users = User.query.all()
     audit_logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(100).all()
-    return render_template('control_panel.html', users=users, audit_logs=audit_logs, active_page='control_panel')
+    admin_ids = [u.id for u in users if u.role == 'admin']
+    # The single remaining admin is protected from deletion in the UI and API.
+    last_admin_id = admin_ids[0] if len(admin_ids) == 1 else None
+    return render_template('control_panel.html', users=users, audit_logs=audit_logs,
+                           last_admin_id=last_admin_id, active_page='control_panel')
 
 @app.route('/delete-user/<int:user_id>', methods=['POST'])
 @login_required
@@ -238,9 +250,13 @@ def delete_user(user_id):
     elif user_to_delete.id == current_user.id:
         flash('You cannot delete your own account.', 'warning')
     else:
-        db.session.delete(user_to_delete)
-        db.session.commit()
-        flash(f'User ID #{user_id} deleted successfully.', 'success')
+        remaining_admins = User.query.filter_by(role='admin').count()
+        if user_to_delete.role == 'admin' and remaining_admins <= 1:
+            flash('Cannot delete the last remaining admin account.', 'warning')
+        else:
+            db.session.delete(user_to_delete)
+            db.session.commit()
+            flash(f'User ID #{user_id} deleted successfully.', 'success')
     return redirect(url_for('control_panel'))
 
 @app.route('/history')
@@ -411,6 +427,29 @@ def scan_target():
                 progress_callback=lambda msg: _report_job(job_id, msg),
             )
             with app.app_context():
+                # Subdomain discovery runs after the core pipeline so any
+                # slowness never delays the 7 main intelligence steps. For
+                # IP targets there is no listing; for domains we use the
+                # 24h-cached lookup to avoid hammering rate-limited sources.
+                subdomains_result = None
+                if not _is_ip_literal(validated_target):
+                    try:
+                        _report_job(job_id, "Subdomain discovery via public certificate transparency logs...")
+                        subdomains_result = discover_subdomains_cached(validated_target)
+                        if subdomains_result.get('error'):
+                            _report_job(job_id, f"Subdomain discovery skipped: {subdomains_result['error']}")
+                        else:
+                            total_subs = len(subdomains_result.get('subdomains') or [])
+                            alive_subs = subdomains_result.get('alive', 0)
+                            cached_note = ' (cached)' if subdomains_result.get('cached') else ''
+                            _report_job(job_id, f"Subdomains: {total_subs} found, {alive_subs} alive{cached_note}")
+                    except Exception as e:
+                        subdomains_result = {
+                            "enabled": True, "subdomains": [], "total": 0,
+                            "checked": 0, "alive": 0, "error": str(e), "cached": False
+                        }
+                        _report_job(job_id, f"Subdomain discovery skipped: {e}")
+
                 # Save results to SQLite database
                 new_scan = ScanResult(
                     user_id=owner_id,
@@ -423,6 +462,7 @@ def scan_target():
                     ssl_data=json.dumps(scan_data['ssl_data']),
                     dns_data=json.dumps(scan_data.get('dns_data', {})),
                     findings_data=json.dumps(scan_data.get('findings', [])),
+                    subdomains_data=json.dumps(subdomains_result) if subdomains_result else None,
                     risk_score=scan_data['risk_score'],
                     risk_level=scan_data['risk_level'],
                     risk_color=scan_data.get('risk_color', '#38bdf8'),
@@ -450,7 +490,8 @@ def scan_target():
                     details=json.dumps({
                         'risk_score': scan_data['risk_score'],
                         'risk_level': scan_data['risk_level'],
-                        'findings_count': len(scan_data.get('findings', []))
+                        'findings_count': len(scan_data.get('findings', [])),
+                        'subdomains_found': (subdomains_result or {}).get('total', 0)
                     })
                 )
                 db.session.add(audit_complete)
@@ -540,6 +581,7 @@ def view_scan_details(scan_id):
     findings_list = safe_json(scan.findings_data)
     if not isinstance(findings_list, list):
         findings_list = []
+    subdomains_dict = safe_json(scan.subdomains_data)
 
     # --- Per-scan chart datasets (derived from the report's own data) ---
     # 1. Correlation findings by severity
@@ -636,6 +678,7 @@ def view_scan_details(scan_id):
         threat_color=bar_threat_color,
         target_is_ip=target_is_ip,
         show_osint_explainer=show_osint_explainer,
+        subdomains=subdomains_dict,
         display_score_level=score_level,
         display_score_color=score_color,
         display_verdict=verdict,
@@ -800,6 +843,7 @@ if __name__ == '__main__':
             'whois_data': 'ALTER TABLE scan_result ADD COLUMN whois_data TEXT',
             'ssl_data': 'ALTER TABLE scan_result ADD COLUMN ssl_data TEXT',
             'dns_data': 'ALTER TABLE scan_result ADD COLUMN dns_data TEXT',
+            'subdomains_data': 'ALTER TABLE scan_result ADD COLUMN subdomains_data TEXT',
             'risk_color': 'ALTER TABLE scan_result ADD COLUMN risk_color VARCHAR(20)',
             'exposure_index': 'ALTER TABLE scan_result ADD COLUMN exposure_index FLOAT DEFAULT 0.0',
             'threat_index': 'ALTER TABLE scan_result ADD COLUMN threat_index FLOAT DEFAULT 0.0',
