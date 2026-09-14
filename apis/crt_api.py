@@ -14,9 +14,9 @@ with warnings.catch_warnings():
 CRT_URL = "https://crt.sh/"
 CERTSPOTTER_URL = "https://api.certspotter.com/v1/issuances"
 TIMEOUT = 8              # per-request timeout for crt.sh (seconds)
-CERTSPOTTER_TIMEOUT = 25  # fallback answers very large domains slowly, so give it a longer budget
-BACKOFFS = [0, 3, 5]  # delay before each attempt (rate-limit politeness)
-DEADLINE = 20         # hard budget for the whole crt.sh lookup
+CERTSPOTTER_TIMEOUT = 15  # fallback answers very large domains slowly, so give it a longer budget
+BACKOFFS = [0, 2, 3]  # delay before each attempt (rate-limit politeness)
+DEADLINE = 12         # hard budget for the whole crt.sh lookup
 CACHE_TTL_HOURS = 24  # how long a cached subdomain listing stays fresh
 MAX_RESULTS = 100     # cap so a huge domain cannot make us loop forever
 

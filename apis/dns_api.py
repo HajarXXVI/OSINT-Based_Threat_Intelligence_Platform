@@ -1,6 +1,7 @@
 # apis/dns_api.py
 import logging
 import requests
+from concurrent.futures import ThreadPoolExecutor
 
 DNS_GOOGLE = "https://dns.google/resolve"
 TIMEOUT = 6
@@ -89,11 +90,20 @@ def get_dns_records(target):
 
     # 5. DKIM — selectors vary per provider; probe a handful of common ones.
     #    Any signed record returned proves DKIM is configured for the domain.
+    #    All selector probes run in parallel so a slow or unresponsive DNS
+    #    service cannot multiply its delay by the number of selectors. The
+    #    verdict is still evaluated by walking the selectors in their original
+    #    order, so a first match is chosen exactly as before.
+    selectors = ("google", "default", "selector1", "selector2", "k1", "s1",
+                 "smtp", "mail", "dkim", "key1", "mandrill", "x")
     dkim = None
-    for selector in ("google", "default", "selector1", "selector2", "k1", "s1",
-                     "smtp", "mail", "dkim", "key1", "mandrill", "x"):
-        dkim_records = _lookup(f"{selector}._domainkey.{clean}", "TXT")
-        if dkim_records:
+    with ThreadPoolExecutor(max_workers=len(selectors)) as executor:
+        probes = {
+            selector: executor.submit(_lookup, f"{selector}._domainkey.{clean}", "TXT")
+            for selector in selectors
+        }
+        for selector in selectors:
+            dkim_records = probes[selector].result() or []
             dkim = next((r["data"] for r in dkim_records if "v=DKIM1" in r.get("data", "")), None)
             if dkim:
                 break
